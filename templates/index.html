@@ -12,7 +12,7 @@
 --text:#fff;--gray:#777;--border:#222;--border2:#2A2A2A;
 }
 body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;overflow-x:hidden}
-          
+
 /* HEADER */
 header{background:#000;border-bottom:1px solid #1A1A1A;padding:16px 24px;position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:center}
 .logo{display:flex;align-items:center;gap:12px}
@@ -90,6 +90,7 @@ header{background:#000;border-bottom:1px solid #1A1A1A;padding:16px 24px;positio
 .txt-input::placeholder{color:#444}
 .field-label{font-size:11px;font-weight:700;color:var(--gray);letter-spacing:.5px;margin-bottom:8px;display:block}
 .field-hint{font-size:11px;color:#444;margin-top:6px;line-height:1.5}
+.field-hint strong{color:#666}
 
 /* CLIPS */
 .clips-row{display:flex;align-items:center;gap:16px}
@@ -168,7 +169,7 @@ footer{text-align:center;padding:24px 20px 40px;font-size:11px;color:#333;border
 <div id="formSection">
   <div class="hero">
     <div class="badge"><span class="badge-dot"></span> IA ATIVA AGORA</div>
-    <h1>Cole o link.<br>A IA <em>corta os melhores<br>momentos</em> pra você.</h1>
+    <h1>Cole o link ou<br>pesquise um <em>jogador.<br>A IA corta os melhores</em> momentos.</h1>
     <p>Sem edição. Sem tempo perdido.<br>Pronto em minutos para qualquer formato.</p>
   </div>
 
@@ -181,16 +182,27 @@ footer{text-align:center;padding:24px 20px 40px;font-size:11px;color:#333;border
   </div>
 
   <div class="card">
-    <div class="card-title"><div class="card-title-icon">🔗</div> Link do YouTube</div>
+    <div class="card-title"><div class="card-title-icon">🎯</div> Pesquisa e Filtro</div>
+    <label class="field-label" for="playerInput">Jogador, clube ou tema</label>
+    <input type="text" class="txt-input" id="playerInput" placeholder="Ex: Messi, Vinicius Jr, gols da rodada...">
+    <div class="field-hint">
+      <strong>Sem link:</strong> a IA busca no YouTube automaticamente e gera os highlights. &nbsp;
+      <strong>Com link:</strong> filtra os melhores momentos desse jogador/tema dentro do vídeo.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="card-title-icon">🔗</div> Link do vídeo <span style="font-size:9px;font-weight:500;color:var(--gray);margin-left:6px;text-transform:none;letter-spacing:0">(opcional)</span></div>
     <div class="url-wrap">
-      <input type="url" class="url-input" id="urlInput" placeholder="https://youtube.com/watch?v=..." oninput="onUrlInput(this.value)">
+      <input type="url" class="url-input" id="urlInput" placeholder="YouTube, TikTok ou Instagram... (opcional)" oninput="onUrlInput(this.value)">
       <button class="url-clear" id="urlClear" onclick="clearUrl()">×</button>
     </div>
     <div class="url-ok" id="urlPreview">
       <span class="url-ok-icon">✅</span>
       <span class="url-ok-text">Link detectado — pronto para processar</span>
     </div>
-    <div class="error-box" id="urlError">Link inválido. Cole um link do YouTube.</div>
+    <div class="field-hint" style="margin-top:8px">Suporta YouTube, TikTok e Instagram · Deixe em branco para buscar pelo campo acima</div>
+    <div class="error-box" id="urlError">Link inválido. Use um link do YouTube, TikTok ou Instagram — ou preencha o campo de pesquisa acima.</div>
   </div>
 
   <div class="card">
@@ -221,13 +233,6 @@ footer{text-align:center;padding:24px 20px 40px;font-size:11px;color:#333;border
       <div class="dur" onclick="selectDur(60,this)"><div class="dur-time">60s</div><div class="dur-label">MÉDIO</div></div>
       <div class="dur" onclick="selectDur(90,this)"><div class="dur-time">90s</div><div class="dur-label">LONGO</div></div>
     </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title"><div class="card-title-icon">🎯</div> Filtro (opcional)</div>
-    <label class="field-label" for="playerInput">Jogador ou tema específico</label>
-    <input type="text" class="txt-input" id="playerInput" placeholder="Ex: Messi, Vinicius Jr, gols...">
-    <div class="field-hint">Deixe em branco para a IA selecionar automaticamente os melhores momentos</div>
   </div>
 
   <div class="card">
@@ -274,7 +279,7 @@ footer{text-align:center;padding:24px 20px 40px;font-size:11px;color:#333;border
     <div class="prog-track"><div class="prog-fill" id="progressFill"></div></div>
     <div class="prog-txt" id="progressLabel">0%</div>
     <div class="proc-steps">
-      <div class="ps" id="ps1"><span class="ps-icon">⏳</span> Baixando vídeo do YouTube</div>
+      <div class="ps" id="ps1"><span class="ps-icon">⏳</span> <span id="ps1text">Buscando e baixando vídeo...</span></div>
       <div class="ps" id="ps2"><span class="ps-icon">○</span> Analisando áudio e movimentos</div>
       <div class="ps" id="ps3"><span class="ps-icon">○</span> Selecionando melhores momentos</div>
       <div class="ps" id="ps4"><span class="ps-icon">○</span> Cortando e editando clipes</div>
@@ -305,17 +310,136 @@ footer{text-align:center;padding:24px 20px 40px;font-size:11px;color:#333;border
 
 <script>
 let selectedFormat='tiktok',selectedDur=30,clipsCount=5,jobId=null,pollInterval=null;
-function onUrlInput(v){const c=document.getElementById('urlClear');const p=document.getElementById('urlPreview');const e=document.getElementById('urlError');c.style.display=v?'block':'none';e.style.display='none';if(v.includes('youtube.com')||v.includes('youtu.be')){p.style.display='flex';}else{p.style.display='none';}}
-function clearUrl(){document.getElementById('urlInput').value='';document.getElementById('urlClear').style.display='none';document.getElementById('urlPreview').style.display='none';}
-function selectFormat(f,el){selectedFormat=f;document.querySelectorAll('.fmt').forEach(c=>{c.classList.remove('selected');c.querySelector('.fmt-icon').style.color='#aaa';});el.classList.add('selected');el.querySelector('.fmt-icon').style.color='var(--orange)';document.getElementById('formatLabel').textContent=f==='tiktok'?'TikTok 9:16':f==='instagram'?'Instagram 1:1':'YouTube 16:9';}
-function selectDur(d,el){selectedDur=d;document.querySelectorAll('.dur').forEach(b=>b.classList.remove('selected'));el.classList.add('selected');}
-function changeClips(delta){clipsCount=Math.max(1,Math.min(10,clipsCount+delta));document.getElementById('clipsNum').textContent=clipsCount;document.getElementById('clipsDesc').textContent=clipsCount;}
-function startProcessing(){const url=document.getElementById('urlInput').value.trim();if(!url||(!url.includes('youtube.com')&&!url.includes('youtu.be'))){document.getElementById('urlError').style.display='block';return;}const player=document.getElementById('playerInput').value.trim();document.getElementById('formSection').style.display='none';document.getElementById('processing').style.display='block';fetch('/process',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,format:selectedFormat,duration:selectedDur,clips:clipsCount,player})}).then(r=>r.json()).then(data=>{if(data.job_id){jobId=data.job_id;pollProgress();}else{showError(data.error||'Erro ao iniciar');}}).catch(()=>showError('Erro de conexão'));}
-function pollProgress(){pollInterval=setInterval(()=>{fetch(`/status/${jobId}`).then(r=>r.json()).then(data=>{updateProgress(data);if(data.status==='done'){clearInterval(pollInterval);setTimeout(()=>showResult(data),500);}else if(data.status==='error'){clearInterval(pollInterval);showError(data.error);}});},1500);}
-function updateProgress(data){const pct=data.progress||0;document.getElementById('progressFill').style.width=pct+'%';document.getElementById('progressLabel').textContent=pct+'%';document.getElementById('procSub').textContent=data.message||'...';for(let i=1;i<=6;i++){const el=document.getElementById('ps'+i);if(pct>=i*(100/6)){el.className='ps done';el.querySelector('.ps-icon').textContent='✅';}else if(pct>=(i-1)*(100/6)){el.className='ps active';el.querySelector('.ps-icon').textContent='⚙️';}}}
-function showResult(data){document.getElementById('processing').style.display='none';document.getElementById('result').style.display='block';document.getElementById('statClips').textContent=data.clips_count||clipsCount;document.getElementById('statDur').textContent=(data.duration||selectedDur)+'s';document.getElementById('statFormat').textContent=selectedFormat==='tiktok'?'TikTok':selectedFormat==='instagram'?'Insta':'YouTube';document.getElementById('downloadBtn').href=`/download/${jobId}`;document.getElementById('resultSub').textContent=`${data.clips_count||clipsCount} cortes selecionados pela IA`;}
-function showError(msg){document.getElementById('processing').style.display='none';document.getElementById('formSection').style.display='block';const e=document.getElementById('submitError');e.textContent='❌ '+msg;e.style.display='block';}
-function resetApp(){document.getElementById('result').style.display='none';document.getElementById('formSection').style.display='block';document.getElementById('urlInput').value='';document.getElementById('urlPreview').style.display='none';document.getElementById('urlClear').style.display='none';jobId=null;}
+
+function onUrlInput(v){
+  const c=document.getElementById('urlClear');
+  const p=document.getElementById('urlPreview');
+  const e=document.getElementById('urlError');
+  c.style.display=v?'block':'none';
+  e.style.display='none';
+  if(v.includes('youtube.com')||v.includes('youtu.be')||v.includes('tiktok.com')||v.includes('instagram.com')){p.style.display='flex';}
+  else{p.style.display='none';}
+}
+
+function clearUrl(){
+  document.getElementById('urlInput').value='';
+  document.getElementById('urlClear').style.display='none';
+  document.getElementById('urlPreview').style.display='none';
+}
+
+function selectFormat(f,el){
+  selectedFormat=f;
+  document.querySelectorAll('.fmt').forEach(c=>{c.classList.remove('selected');c.querySelector('.fmt-icon').style.color='#aaa';});
+  el.classList.add('selected');
+  el.querySelector('.fmt-icon').style.color='var(--orange)';
+  document.getElementById('formatLabel').textContent=f==='tiktok'?'TikTok 9:16':f==='instagram'?'Instagram 1:1':'YouTube 16:9';
+}
+
+function selectDur(d,el){
+  selectedDur=d;
+  document.querySelectorAll('.dur').forEach(b=>b.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function changeClips(delta){
+  clipsCount=Math.max(1,Math.min(10,clipsCount+delta));
+  document.getElementById('clipsNum').textContent=clipsCount;
+  document.getElementById('clipsDesc').textContent=clipsCount;
+}
+
+function startProcessing(){
+  const url=document.getElementById('urlInput').value.trim();
+  const player=document.getElementById('playerInput').value.trim();
+  const e=document.getElementById('urlError');
+
+  // Precisa de pelo menos um: link válido OU tema de pesquisa
+  if(!player && !url){
+    e.textContent='Preencha o campo de Pesquisa e Filtro ou cole um link de vídeo.';
+    e.style.display='block';
+    return;
+  }
+  // Se link foi fornecido, valida plataforma
+  const validLink = url && (url.includes('youtube.com')||url.includes('youtu.be')||url.includes('tiktok.com')||url.includes('instagram.com'));
+  if(url && !validLink){
+    e.textContent='Link inválido. Use um link do YouTube, TikTok ou Instagram.';
+    e.style.display='block';
+    return;
+  }
+  e.style.display='none';
+
+  // Detecta plataforma para texto do passo 1
+  let plataforma = 'YouTube';
+  if(url && url.includes('tiktok.com')) plataforma = 'TikTok';
+  if(url && url.includes('instagram.com')) plataforma = 'Instagram';
+
+  if(!url && player){
+    document.getElementById('ps1text').textContent='Buscando "'+player+'" no YouTube...';
+  } else {
+    document.getElementById('ps1text').textContent='Baixando vídeo do '+plataforma+'...';
+  }
+
+  document.getElementById('formSection').style.display='none';
+  document.getElementById('processing').style.display='block';
+
+  fetch('/process',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({url,format:selectedFormat,duration:selectedDur,clips:clipsCount,player})
+  }).then(r=>r.json()).then(data=>{
+    if(data.job_id){jobId=data.job_id;pollProgress();}
+    else{showError(data.error||'Erro ao iniciar');}
+  }).catch(()=>showError('Erro de conexão'));
+}
+
+function pollProgress(){
+  pollInterval=setInterval(()=>{
+    fetch(`/status/${jobId}`).then(r=>r.json()).then(data=>{
+      updateProgress(data);
+      if(data.status==='done'){clearInterval(pollInterval);setTimeout(()=>showResult(data),500);}
+      else if(data.status==='error'){clearInterval(pollInterval);showError(data.error);}
+    });
+  },1500);
+}
+
+function updateProgress(data){
+  const pct=data.progress||0;
+  document.getElementById('progressFill').style.width=pct+'%';
+  document.getElementById('progressLabel').textContent=pct+'%';
+  document.getElementById('procSub').textContent=data.message||'...';
+  for(let i=1;i<=6;i++){
+    const el=document.getElementById('ps'+i);
+    if(pct>=i*(100/6)){el.className='ps done';el.querySelector('.ps-icon').textContent='✅';}
+    else if(pct>=(i-1)*(100/6)){el.className='ps active';el.querySelector('.ps-icon').textContent='⚙️';}
+  }
+}
+
+function showResult(data){
+  document.getElementById('processing').style.display='none';
+  document.getElementById('result').style.display='block';
+  document.getElementById('statClips').textContent=data.clips_count||clipsCount;
+  document.getElementById('statDur').textContent=(data.duration||selectedDur)+'s';
+  document.getElementById('statFormat').textContent=selectedFormat==='tiktok'?'TikTok':selectedFormat==='instagram'?'Insta':'YouTube';
+  document.getElementById('downloadBtn').href=`/download/${jobId}`;
+  document.getElementById('resultSub').textContent=`${data.clips_count||clipsCount} cortes selecionados pela IA`;
+}
+
+function showError(msg){
+  document.getElementById('processing').style.display='none';
+  document.getElementById('formSection').style.display='block';
+  const e=document.getElementById('submitError');
+  e.textContent='❌ '+msg;
+  e.style.display='block';
+}
+
+function resetApp(){
+  document.getElementById('result').style.display='none';
+  document.getElementById('formSection').style.display='block';
+  document.getElementById('urlInput').value='';
+  document.getElementById('playerInput').value='';
+  document.getElementById('urlPreview').style.display='none';
+  document.getElementById('urlClear').style.display='none';
+  jobId=null;
+}
 </script>
 </body>
 </html>
