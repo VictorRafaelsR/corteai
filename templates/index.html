@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CorteAI — Highlights Automáticos com IA</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --gold:#C8A951;--gold2:#e8c96a;--bg:#0a0a0a;--bg2:#111;--bg3:#1a1a1a;
+    --text:#fff;--gray:#888;--border:#2a2a2a;--red:#e53935;
+  }
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+  header{background:linear-gradient(135deg,#0a0a0a 0%,#1a1400 100%);border-bottom:1px solid #2a2000;padding:18px 20px;text-align:center;position:sticky;top:0;z-index:100}
+  .logo{display:flex;align-items:center;justify-content:center;gap:10px}
+  .logo-icon{width:36px;height:36px;background:var(--gold);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px}
+  .logo-text{font-size:22px;font-weight:800;letter-spacing:-0.5px}
+  .logo-text span{color:var(--gold)}
+  .logo-sub{font-size:11px;color:var(--gray);margin-top:2px;letter-spacing:1px}
+  .hero{padding:40px 20px 28px;text-align:center;max-width:500px;margin:0 auto}
+  .hero h1{font-size:28px;font-weight:800;line-height:1.2;margin-bottom:12px}
+  .hero h1 span{color:var(--gold)}
+  .hero p{color:var(--gray);font-size:15px;line-height:1.6}
+  .badge{display:inline-block;background:#1a1400;border:1px solid #3a2800;color:var(--gold);font-size:11px;font-weight:700;letter-spacing:1px;padding:4px 12px;border-radius:20px;margin-bottom:16px}
+  .steps{display:flex;justify-content:center;gap:8px;padding:0 20px 32px;max-width:500px;margin:0 auto}
+  .step{flex:1;text-align:center;position:relative}
+  .step::after{content:'';position:absolute;top:14px;right:-4px;width:8px;height:1px;background:var(--border)}
+  .step:last-child::after{display:none}
+  .step-num{width:28px;height:28px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;margin:0 auto 6px;color:var(--gray)}
+  .step.active .step-num{background:var(--gold);border-color:var(--gold);color:#000}
+  .step-label{font-size:10px;color:var(--gray);letter-spacing:0.5px}
+  .card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:500px;margin:0 auto 16px;position:relative}
+  .card-title{font-size:13px;font-weight:700;color:var(--gold);letter-spacing:1px;text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+  .url-group{position:relative}
+  .url-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px 48px 14px 16px;font-size:15px;color:var(--text);outline:none;transition:border .2s}
+  .url-input:focus{border-color:var(--gold)}
+  .url-input::placeholder{color:var(--gray)}
+  .url-clear{position:absolute;right:14px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--gray);cursor:pointer;font-size:18px;display:none}
+  .url-preview{margin-top:10px;background:#0d1a00;border:1px solid #1a3300;border-radius:8px;padding:10px 12px;display:none;align-items:center;gap:10px}
+  .url-preview-info{flex:1;min-width:0}
+  .url-preview-title{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .url-preview-duration{font-size:11px;color:var(--gray);margin-top:2px}
+  .format-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .format-card{background:var(--bg3);border:2px solid var(--border);border-radius:12px;padding:14px 8px;text-align:center;cursor:pointer;transition:all .2s}
+  .format-card:hover{border-color:#444}
+  .format-card.selected{border-color:var(--gold);background:#1a1400}
+  .format-icon{margin-bottom:8px;display:flex;justify-content:center}
+  .format-label{font-size:12px;font-weight:700}
+  .format-sub{font-size:10px;color:var(--gray);margin-top:3px}
+  .icon-phone{width:24px;height:36px;border:2px solid currentColor;border-radius:4px;position:relative}
+  .icon-phone::after{content:'';width:6px;height:1px;background:currentColor;position:absolute;bottom:3px;left:50%;transform:translateX(-50%)}
+  .icon-square{width:32px;height:32px;border:2px solid currentColor;border-radius:4px}
+  .icon-land{width:40px;height:26px;border:2px solid currentColor;border-radius:3px}
+  .duration-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .dur-btn{background:var(--bg3);border:2px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all .2s}
+  .dur-btn:hover{border-color:#444}
+  .dur-btn.selected{border-color:var(--gold);background:#1a1400}
+  .dur-btn .time{font-size:18px;font-weight:800;color:var(--gold)}
+  .dur-btn .label{font-size:10px;color:var(--gray);margin-top:3px}
+  .field-label{font-size:12px;color:var(--gray);margin-bottom:8px;display:block}
+  .text-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-size:14px;color:var(--text);outline:none;transition:border .2s}
+  .text-input:focus{border-color:var(--gold)}
+  .text-input::placeholder{color:#444}
+  .field-hint{font-size:11px;color:#555;margin-top:6px}
+  .clips-row{display:flex;align-items:center;gap:12px}
+  .clips-num{font-size:32px;font-weight:800;color:var(--gold);min-width:40px}
+  .clips-controls{display:flex;flex-direction:column;gap:6px}
+  .clip-btn{width:32px;height:32px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
+  .clip-btn:hover{border-color:var(--gold);color:var(--gold)}
+  .clips-desc{font-size:12px;color:var(--gray);line-height:1.5}
+  .submit-btn{width:100%;padding:18px;background:linear-gradient(135deg,var(--gold),#a07820);border:none;border-radius:12px;font-size:16px;font-weight:800;color:#000;cursor:pointer;transition:all .2s;letter-spacing:0.5px;display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px}
+  .submit-btn:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(200,169,81,.3)}
+  .submit-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+  .price-note{text-align:center;font-size:12px;color:var(--gray);margin-top:12px}
+  .price-note strong{color:var(--gold)}
+  #processing{display:none;max-width:500px;margin:0 auto;padding:0 20px}
+  .proc-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px 24px;text-align:center}
+  .proc-anim{font-size:64px;margin-bottom:20px;animation:bounce 1s infinite}
+  @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  .proc-title{font-size:20px;font-weight:800;margin-bottom:8px}
+  .proc-sub{font-size:14px;color:var(--gray);margin-bottom:24px}
+  .progress-bar{width:100%;height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:12px}
+  .progress-fill{height:100%;background:linear-gradient(90deg,var(--gold),#e8c96a);border-radius:4px;width:0%;transition:width .5s ease}
+  .progress-label{font-size:12px;color:var(--gray)}
+  .proc-steps{margin-top:24px;text-align:left}
+  .proc-step{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;color:var(--gray)}
+  .proc-step:last-child{border-bottom:none}
+  .proc-step.done{color:var(--text)}
+  .proc-step.active{color:var(--gold)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .step-icon{font-size:16px;width:20px;text-align:center}
+  #result{display:none;max-width:500px;margin:0 auto;padding:0 20px}
+  .result-card{background:var(--bg2);border:1px solid #1a3300;border-radius:16px;padding:28px 24px}
+  .result-header{text-align:center;margin-bottom:24px}
+  .result-emoji{font-size:56px;margin-bottom:12px}
+  .result-title{font-size:22px;font-weight:800;color:var(--gold)}
+  .result-sub{font-size:14px;color:var(--gray);margin-top:6px}
+  .result-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px}
+  .stat-box{background:var(--bg3);border-radius:10px;padding:12px;text-align:center}
+  .stat-val{font-size:22px;font-weight:800;color:var(--gold)}
+  .stat-label{font-size:10px;color:var(--gray);margin-top:4px;letter-spacing:0.5px}
+  .download-btn{width:100%;padding:16px;background:linear-gradient(135deg,#1a4d00,#0d2600);border:2px solid #2a7000;border-radius:12px;font-size:15px;font-weight:700;color:#7fff00;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px;text-decoration:none;transition:all .2s}
+  .new-btn{width:100%;padding:14px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;font-size:14px;font-weight:600;color:var(--gray);cursor:pointer;transition:all .2s}
+  .new-btn:hover{border-color:#444;color:var(--text)}
+  .error-box{background:#1a0000;border:1px solid #4a0000;border-radius:10px;padding:14px 16px;font-size:13px;color:#ff6b6b;margin-top:12px;display:none}
+  .proof{max-width:500px;margin:0 auto 32px;padding:0 20px}
+  .proof-title{font-size:11px;color:var(--gray);text-align:center;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px}
+  .proof-list{display:flex;flex-direction:column;gap:8px}
+  .proof-item{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:12px;color:var(--gray);display:flex;align-items:center;gap:8px}
+  .proof-dot{width:6px;height:6px;border-radius:50%;background:#4caf50;flex-shrink:0;box-shadow:0 0 6px #4caf50}
+  footer{text-align:center;padding:24px 20px;font-size:11px;color:#333;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <div class="logo-icon">✂️</div>
+    <div>
+      <div class="logo-text">Corte<span>AI</span></div>
+      <div class="logo-sub">HIGHLIGHTS AUTOMÁTICOS COM IA</div>
+    </div>
+  </div>
+</header>
+<div id="formSection">
+  <div class="hero">
+    <div class="badge">⚡ POWERED BY IA</div>
+    <h1>Cole o link.<br>A IA <span>corta os melhores momentos</span> pra você.</h1>
+    <p>Sem edição manual. Sem perda de tempo. Pronto em minutos.</p>
+  </div>
+  <div class="steps" style="padding:0 20px 28px">
+    <div class="step active" id="step1el"><div class="step-num">1</div><div class="step-label">LINK</div></div>
+    <div class="step" id="step2el"><div class="step-num">2</div><div class="step-label">FORMATO</div></div>
+    <div class="step" id="step3el"><div class="step-num">3</div><div class="step-label">DOWNLOAD</div></div>
+  </div>
+  <div class="card" style="margin:0 20px 16px">
+    <div class="card-title">🔗 Link do YouTube</div>
+    <div class="url-group">
+      <input type="url" class="url-input" id="urlInput" placeholder="https://youtube.com/watch?v=..." oninput="onUrlInput(this.value)">
+      <button class="url-clear" id="urlClear" onclick="clearUrl()">×</button>
+    </div>
+    <div class="url-preview" id="urlPreview">
+      <div class="url-preview-info">
+        <div class="url-preview-title" id="previewTitle">Carregando...</div>
+        <div class="url-preview-duration" id="previewDur">–</div>
+      </div>
+    </div>
+    <div class="error-box" id="urlError">Link inválido. Cole um link do YouTube.</div>
+  </div>
+  <div class="card" style="margin:0 20px 16px">
+    <div class="card-title">📐 Formato de saída</div>
+    <div class="format-grid">
+      <div class="format-card selected" onclick="selectFormat('tiktok',this)">
+        <div class="format-icon" style="color:var(--gold)"><div class="icon-phone"></div></div>
+        <div class="format-label">TikTok</div><div class="format-sub">9:16 vertical</div>
+      </div>
+      <div class="format-card" onclick="selectFormat('instagram',this)">
+        <div class="format-icon" style="color:#c8c8c8"><div class="icon-square"></div></div>
+        <div class="format-label">Instagram</div><div class="format-sub">1:1 quadrado</div>
+      </div>
+      <div class="format-card" onclick="selectFormat('youtube',this)">
+        <div class="format-icon" style="color:#c8c8c8"><div class="icon-land"></div></div>
+        <div class="format-label">YouTube</div><div class="format-sub">16:9 horizontal</div>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin:0 20px 16px">
+    <div class="card-title">⏱️ Duração do vídeo final</div>
+    <div class="duration-grid">
+      <div class="dur-btn selected" onclick="selectDur(30,this)"><div class="time">30s</div><div class="label">CURTO</div></div>
+      <div class="dur-btn" onclick="selectDur(60,this)"><div class="time">60s</div><div class="label">MÉDIO</div></div>
+      <div class="dur-btn" onclick="selectDur(90,this)"><div class="time">90s</div><div class="label">LONGO</div></div>
+    </div>
+  </div>
+  <div class="card" style="margin:0 20px 16px">
+    <div class="card-title">🎯 Filtro (opcional)</div>
+    <label class="field-label" for="playerInput">Jogador ou tema específico</label>
+    <input type="text" class="text-input" id="playerInput" placeholder="Ex: Messi, Vinicius Jr, gols...">
+    <div class="field-hint">Deixe em branco para a IA escolher os melhores momentos automaticamente</div>
+  </div>
+  <div class="card" style="margin:0 20px 16px">
+    <div class="card-title">✂️ Quantidade de cortes</div>
+    <div class="clips-row">
+      <div class="clips-num" id="clipsNum">5</div>
+      <div class="clips-controls">
+        <button class="clip-btn" onclick="changeClips(1)">+</button>
+        <button class="clip-btn" onclick="changeClips(-1)">−</button>
+      </div>
+      <div class="clips-desc">A IA vai selecionar os <strong id="clipsDesc">5</strong> melhores momentos do vídeo e montar automaticamente.</div>
+    </div>
+  </div>
+  <div style="padding:0 20px 40px">
+    <button class="submit-btn" id="submitBtn" onclick="startProcessing()">
+      <span>⚡</span> GERAR HIGHLIGHTS COM IA
+    </button>
+    <div class="price-note">✅ Processamento seguro &nbsp;·&nbsp; <strong>Resultado em ~2 minutos</strong></div>
+    <div class="error-box" id="submitError"></div>
+  </div>
+  <div class="proof">
+    <div class="proof-title">Gerado agora mesmo</div>
+    <div class="proof-list">
+      <div class="proof-item"><div class="proof-dot"></div>Edit Vinicius Jr — Copa 2026 • TikTok 60s • há 3 min</div>
+      <div class="proof-item"><div class="proof-dot"></div>Melhores Gols da Rodada • Instagram 30s • há 7 min</div>
+      <div class="proof-item"><div class="proof-dot"></div>Haaland Hat-trick • TikTok 90s • há 12 min</div>
+    </div>
+  </div>
+</div>
+<div id="processing" style="padding:20px">
+  <div class="proc-card">
+    <div class="proc-anim">⚡</div>
+    <div class="proc-title">Processando seu vídeo</div>
+    <div class="proc-sub" id="procSub">A IA está analisando os melhores momentos...</div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-label" id="progressLabel">0%</div>
+    <div class="proc-steps">
+      <div class="proc-step" id="ps1"><span class="step-icon">⏳</span> Baixando vídeo do YouTube</div>
+      <div class="proc-step" id="ps2"><span class="step-icon">○</span> Analisando audio e movimentos</div>
+      <div class="proc-step" id="ps3"><span class="step-icon">○</span> Selecionando melhores momentos</div>
+      <div class="proc-step" id="ps4"><span class="step-icon">○</span> Cortando e editando clipes</div>
+      <div class="proc-step" id="ps5"><span class="step-icon">○</span> Convertendo para <span id="formatLabel">TikTok</span></div>
+      <div class="proc-step" id="ps6"><span class="step-icon">○</span> Finalizando vídeo</div>
+    </div>
+  </div>
+</div>
+<div id="result" style="padding:20px">
+  <div class="result-card">
+    <div class="result-header">
+      <div class="result-emoji">🎉</div>
+      <div class="result-title">Highlights Prontos!</div>
+      <div class="result-sub" id="resultSub">Seu vídeo foi gerado com sucesso</div>
+    </div>
+    <div class="result-stats">
+      <div class="stat-box"><div class="stat-val" id="statClips">5</div><div class="stat-label">CORTES</div></div>
+      <div class="stat-box"><div class="stat-val" id="statDur">60s</div><div class="stat-label">DURAÇÃO</div></div>
+      <div class="stat-box"><div class="stat-val" id="statFormat">TikTok</div><div class="stat-label">FORMATO</div></div>
+    </div>
+    <a class="download-btn" id="downloadBtn" href="#" download>⬇️ BAIXAR VÍDEO</a>
+    <button class="new-btn" onclick="resetApp()">+ Gerar novo vídeo</button>
+  </div>
+</div>
+<footer>CorteAI © 2026 — Tecnologia de IA para criadores de conteúdo</footer>
+<script>
+let selectedFormat='tiktok',selectedDur=30,clipsCount=5,jobId=null,pollInterval=null;
+function onUrlInput(val){document.getElementById('urlClear').style.display=val?'block':'none';document.getElementById('urlError').style.display='none';document.getElementById('urlPreview').style.display='none';if(val.includes('youtube.com')||val.includes('youtu.be')){document.getElementById('urlPreview').style.display='flex';document.getElementById('previewTitle').textContent='Link detectado ✓';document.getElementById('previewDur').textContent='Pronto para processar';}}
+function clearUrl(){document.getElementById('urlInput').value='';document.getElementById('urlClear').style.display='none';document.getElementById('urlPreview').style.display='none';}
+function selectFormat(fmt,el){selectedFormat=fmt;document.querySelectorAll('.format-card').forEach(c=>c.classList.remove('selected'));el.classList.add('selected');document.getElementById('formatLabel').textContent=fmt==='tiktok'?'TikTok 9:16':fmt==='instagram'?'Instagram 1:1':'YouTube 16:9';}
+function selectDur(d,el){selectedDur=d;document.querySelectorAll('.dur-btn').forEach(b=>b.classList.remove('selected'));el.classList.add('selected');}
+function changeClips(delta){clipsCount=Math.max(1,Math.min(10,clipsCount+delta));document.getElementById('clipsNum').textContent=clipsCount;document.getElementById('clipsDesc').textContent=clipsCount;}
+function startProcessing(){const url=document.getElementById('urlInput').value.trim();if(!url||(!url.includes('youtube.com')&&!url.includes('youtu.be'))){document.getElementById('urlError').style.display='block';return;}const player=document.getElementById('playerInput').value.trim();document.getElementById('formSection').style.display='none';document.getElementById('processing').style.display='block';fetch('/process',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,format:selectedFormat,duration:selectedDur,clips:clipsCount,player})}).then(r=>r.json()).then(data=>{if(data.job_id){jobId=data.job_id;pollProgress();}else{showError(data.error||'Erro ao iniciar');}}).catch(()=>showError('Erro de conexão'));}
+function pollProgress(){pollInterval=setInterval(()=>{fetch(`/status/${jobId}`).then(r=>r.json()).then(data=>{updateProgress(data);if(data.status==='done'){clearInterval(pollInterval);setTimeout(()=>showResult(data),500);}else if(data.status==='error'){clearInterval(pollInterval);showError(data.error);}});},1500);}
+function updateProgress(data){const pct=data.progress||0;document.getElementById('progressFill').style.width=pct+'%';document.getElementById('progressLabel').textContent=pct+'%';document.getElementById('procSub').textContent=data.message||'...';for(let i=1;i<=6;i++){const el=document.getElementById('ps'+i);if(pct>=i*(100/6)){el.className='proc-step done';el.querySelector('.step-icon').textContent='✅';}else if(pct>=(i-1)*(100/6)){el.className='proc-step active';el.querySelector('.step-icon').textContent='⚙️';}}}
+function showResult(data){document.getElementById('processing').style.display='none';document.getElementById('result').style.display='block';document.getElementById('statClips').textContent=data.clips_count||clipsCount;document.getElementById('statDur').textContent=(data.duration||selectedDur)+'s';document.getElementById('statFormat').textContent=selectedFormat==='tiktok'?'TikTok':selectedFormat==='instagram'?'Insta':'YouTube';document.getElementById('downloadBtn').href=`/download/${jobId}`;document.getElementById('resultSub').textContent=`${data.clips_count||clipsCount} cortes selecionados pela IA`;}
+function showError(msg){document.getElementById('processing').style.display='none';document.getElementById('formSection').style.display='block';const e=document.getElementById('submitError');e.textContent='❌ '+msg;e.style.display='block';}
+function resetApp(){document.getElementById('result').style.display='none';document.getElementById('formSection').style.display='block';document.getElementById('urlInput').value='';document.getElementById('urlPreview').style.display='none';document.getElementById('urlClear').style.display='none';jobId=null;}
+</script>
+</body>
+</html>
