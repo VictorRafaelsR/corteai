@@ -203,7 +203,7 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 scaled_paths.append(sc_path)
 
         if not scaled_paths:
-            last_err = (r.stderr or '')[-400:] if hasattr(r,'stderr') else 'sem detalhe'
+            last_err = (r.stderr or '')[:600] if hasattr(r,'stderr') else 'sem detalhe'
             fail("Erro ao gerar clipes. ffmpeg: " + last_err)
             return
 
