@@ -222,7 +222,8 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 scaled_paths.append(sc_path)
 
         if not scaled_paths:
-            fail("Erro ao converter o video para o formato solicitado.")
+            last_err = r.stderr[-300:] if hasattr(r,'stderr') and r.stderr else 'sem detalhe'
+            fail("Erro ao converter. ffmpeg: " + last_err)
             return
 
         upd(88, "Juntando todos os clipes...")
