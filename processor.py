@@ -204,10 +204,12 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 scaled_paths.append(sc_path)
 
         if not scaled_paths:
+            sc_rc = getattr(r, 'returncode', '?')
             stderr = (r.stderr or '') if hasattr(r,'stderr') else ''
-            err_lines = [l for l in stderr.split('\n') if any(k in l.lower() for k in ['error','unknown','invalid','cannot','unsupported','no such','failed','no encoder'])]
-            last_err = '\n'.join(err_lines[:8]) or stderr[1200:2000]
-            fail("Erro ao gerar clipes. ffmpeg: " + last_err)
+            # Skip config header, get meaningful lines (non-indented, non-empty)
+            useful = [l for l in stderr.split('\n') if l.strip() and not l.startswith('  ') and not l.startswith('built') and not l.startswith('config')]
+            last_err = '\n'.join(useful[-15:])[-500:] or stderr[-400:]
+            fail(f"Scale rc={sc_rc}: {last_err}")
             return
 
 
