@@ -204,7 +204,9 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 scaled_paths.append(sc_path)
 
         if not scaled_paths:
-            last_err = (r.stderr or '')[:600] if hasattr(r,'stderr') else 'sem detalhe'
+            stderr = (r.stderr or '') if hasattr(r,'stderr') else ''
+            err_lines = [l for l in stderr.split('\n') if any(k in l.lower() for k in ['error','unknown','invalid','cannot','unsupported','no such','failed','no encoder'])]
+            last_err = '\n'.join(err_lines[:8]) or stderr[1200:2000]
             fail("Erro ao gerar clipes. ffmpeg: " + last_err)
             return
 
