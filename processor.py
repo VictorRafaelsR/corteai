@@ -188,7 +188,7 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 f'ffmpeg -y -ss {start:.2f} -i "{raw_path}" '
                 f'-t {clip_dur:.2f} '
                 f'-vf "{scale_filter}" '
-                f'-c:v libx264 -c:a aac -preset fast '
+                f'-c:v libx264 -preset ultrafast -threads 1 -crf 28 -c:a aac '
                 f'"{sc_path}"'
             )
             r = run(sc_cmd, timeout=180)
