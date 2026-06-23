@@ -4,8 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "/opt/venv/bin/gunicorn app:app --workers 2 --timeout 300",
-    "healthcheckPath": "/",
+    "healthcheckPath": "/health",
     "restartPolicyType": "ON_FAILURE"
   }
 }
