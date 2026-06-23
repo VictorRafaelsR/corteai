@@ -179,7 +179,7 @@ def process_video(job_id, url, fmt, duration, clips, player):
             cut_cmd = (
                 f'ffmpeg -y -ss {start:.2f} -i "{raw_path}" '
                 f'-t {clip_dur:.2f} '
-                f'-c:v libx264 -c:a aac -preset fast '
+                f'-c copy '
                 f'"{clip_path}"'
             )
             r = run(cut_cmd, timeout=120)
@@ -187,7 +187,7 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 clip_paths.append(clip_path)
 
         if not clip_paths:
-            fail("Nao foi possivel extrair clipes do video. Tente um video diferente.")
+            fail("Erro ao cortar clipes. ffmpeg pode nao suportar o codec do video baixado. Tente outro video.")
             return
 
         upd(75, "Convertendo para o formato escolhido...")
@@ -210,6 +210,14 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 f'"{sc_path}"'
             )
             r = run(sc_cmd, timeout=180)
+            if not (sc_path.exists() and sc_path.stat().st_size > 1000):
+                # Fallback: try without specifying codec
+                sc_cmd2 = (
+                    f'ffmpeg -y -i "{cp}" '
+                    f'-vf "{scale_filter}" '
+                    f'"{sc_path}"'
+                )
+                r = run(sc_cmd2, timeout=180)
             if sc_path.exists() and sc_path.stat().st_size > 1000:
                 scaled_paths.append(sc_path)
 
