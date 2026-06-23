@@ -182,16 +182,6 @@ footer{text-align:center;padding:24px 20px 40px;font-size:11px;color:#333;border
   </div>
 
   <div class="card">
-    <div class="card-title"><div class="card-title-icon">🎯</div> Pesquisa e Filtro</div>
-    <label class="field-label" for="playerInput">Jogador, clube ou tema</label>
-    <input type="text" class="txt-input" id="playerInput" placeholder="Ex: Messi, Vinicius Jr, gols da rodada...">
-    <div class="field-hint">
-      <strong>Sem link:</strong> a IA busca no YouTube automaticamente e gera os highlights. &nbsp;
-      <strong>Com link:</strong> filtra os melhores momentos desse jogador/tema dentro do vídeo.
-    </div>
-  </div>
-
-  <div class="card">
     <div class="card-title"><div class="card-title-icon">🔗</div> Link do vídeo <span style="font-size:9px;font-weight:500;color:var(--gray);margin-left:6px;text-transform:none;letter-spacing:0">(opcional)</span></div>
     <div class="url-wrap">
       <input type="url" class="url-input" id="urlInput" placeholder="YouTube, TikTok ou Instagram... (opcional)" oninput="onUrlInput(this.value)">
@@ -203,6 +193,16 @@ footer{text-align:center;padding:24px 20px 40px;font-size:11px;color:#333;border
     </div>
     <div class="field-hint" style="margin-top:8px">Suporta YouTube, TikTok e Instagram · Deixe em branco para buscar pelo campo acima</div>
     <div class="error-box" id="urlError">Link inválido. Use um link do YouTube, TikTok ou Instagram — ou preencha o campo de pesquisa acima.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><div class="card-title-icon">🎯</div> Pesquisa e Filtro</div>
+    <label class="field-label" for="playerInput">Jogador, clube ou tema</label>
+    <input type="text" class="txt-input" id="playerInput" placeholder="Ex: Messi, Vinicius Jr, gols da rodada...">
+    <div class="field-hint">
+      <strong>Sem link:</strong> a IA busca no YouTube automaticamente e gera os highlights. &nbsp;
+      <strong>Com link:</strong> filtra os melhores momentos desse jogador/tema dentro do vídeo.
+    </div>
   </div>
 
   <div class="card">
