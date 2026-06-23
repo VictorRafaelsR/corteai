@@ -175,7 +175,8 @@ def process_video(job_id, url, fmt, duration, clips, player):
         tw, th = fs["w"], fs["h"]
         scale_filter = (
             f"scale={tw}:{th}:force_original_aspect_ratio=increase,"
-            f"crop={tw}:{th}"
+            f"crop={tw}:{th},"
+            f"format=yuv420p"
         )
         scaled_paths = []
         for idx, t in enumerate(peaks):
