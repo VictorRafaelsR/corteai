@@ -32,8 +32,8 @@ def index():
 def process():
         try:
                     data = request.get_json(force=True, silent=True) or {}
-except Exception:
-        return jsonify({"error": "Requisicao invalida"}), 400
+        except Exception:
+            return jsonify({"error": "Requisicao invalida"}), 400
 
     url    = (data.get("url") or "").strip()
     fmt    = data.get("format", "tiktok")
