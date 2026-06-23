@@ -180,52 +180,98 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 f'ffmpeg -y -ss {start:.2f} -i "{raw_path}" '
                 f'-t {clip_dur:.2f} '
                 f'-c:v libx264 -c:a aac -preset fast '
-                f'��\�]H�
-B��H�[��]��Y[Y[�]LL�
-B�Y��\�]�^\��
-H[��\�]��]
+                f'"{clip_path}"'
+            )
+            r = run(cut_cmd, timeout=120)
+            if clip_path.exists() and clip_path.stat().st_size > 1000:
+                clip_paths.append(clip_path)
 
-K����^�H�L���\�]˘\[�
-�\�]
-B��Y����\�]΂��Z[
-��[���H���]�[^�Z\��\\���Y[ˈ[�H[H�Y[�Y�\�[�K��B��]\����\
+        if not clip_paths:
+            fail("Nao foi possivel extrair clipes do video. Tente um video diferente.")
+            return
 
-�K��۝�\�[��\�H��ܛX]�\���Yˋ���B���KH�T
-����[H[�ܛ�KB���H�ԓPU��US��˙�]
-�]�ԓPU��US���ȝZ��ȗJB��H��ȝȗK��Ț�B����[Y�]�H�B��܈Y�[�[�[Y\�]J�\�]�N�����]H�]�\������[Y��Y��K�\
-����[Wٚ[\�H
-�����[O^��N��N��ܘ�W�ܚY�[�[�\�X�ܘ][�Z[�ܙX\�K����ܛ�^��N��H��
-B�����YH
-��ٙ�\Y�^HZH���H�	��]������[Wٚ[\�H�	��XΝ�X���XΘHXX�\�\�]�\�	�Ȟ����]H�
-B��H�[�����Y[Y[�]LN
-B�Y����]�^\��
-H[����]��]
+        upd(75, "Convertendo para o formato escolhido...")
 
-K����^�H�L����[Y�]˘\[�
-���]
-B��Y�����[Y�]΂��Z[
-�\���[��۝�\�\���Y[�\�H��ܛX]���X�]Yˈ�B��]\����\
-��[�[��������\\ˋ���B���KH�T
-Έ�ۘ�][�]HKB��ۘ�]�\�H�]�\����ۘ�]����]�[��ۘ�]�\��ȊH\�����܈�[���[Y�]΂���ܚ]J���[H	�����\���J
-_I���B���]]ۘ[YHH���ܝXZW�ڛؗ�YΎ_K�\
-���]]�]H�]�\���]]ۘ[YB���ۘ�]��YH
-��ٙ�\Y�^HY��ۘ�]\�Y�HZH���ۘ�]�\�H�	��X���H���]]�]H�
-B��\�[H�[��ۘ�]��Y[Y[�]LN
-B��Y����]]�]�^\��
-H܈�]]�]��]
+        # -- STEP 6: Scale and crop --
+        fs = FORMAT_SETTINGS.get(fmt, FORMAT_SETTINGS["tiktok"])
+        tw, th = fs["w"], fs["h"]
 
-K����^�HL��Y���[Y�]΂��][���J��[Y�]��K�]]�]
-B�[�N���Z[
-�\���[��[�[^�\���Y[ˈ[�H�ݘ[Y[�K��B��]\����\
-N��[�[^�[�ˋ���B���KH�T�ۙHKB�X�X[��\�H[���[Y�]�B��ؙL�H�[��ٙ��ؙH]�]ZY]\�[�ٛܛX]��ۈ\���ٛܛX]���]]�]H��[Y[�]L�
-B��N���]�\�H[�
-��]
-��ۋ��Y��ؙL����]
-Vș�ܛX]�Vș\�][ۈ�JJB�^�\^�\[ێ���]�\�H\�][ۂ���[�[�]HH��]\Ȏ��ۙH�����ܙ\�Ȏ�L��Y\��Y�H����۝�H����\����[���X�X[��\���\�][ۈ���]�\����]]ٚ[H���]]ۘ[YK���ܛX]���]�B��]\�ٚ[K�ܚ]W�^
-��ۋ�[\��[�[�]JJB���N���܈�[��]�\��]\�\�
-N��Y����[YK��\���]
+        scaled_paths = []
+        for idx, cp in enumerate(clip_paths):
+            sc_path = out_dir / f"scaled_{idx:02d}.mp4"
+            scale_filter = (
+                f"scale={tw}:{th}:force_original_aspect_ratio=increase,"
+                f"crop={tw}:{th}"
+            )
+            sc_cmd = (
+                f'ffmpeg -y -i "{cp}" '
+                f'-vf "{scale_filter}" '
+                f'-c:v libx264 -c:a aac -preset fast '
+                f'"{sc_path}"'
+            )
+            r = run(sc_cmd, timeout=180)
+            if sc_path.exists() and sc_path.stat().st_size > 1000:
+                scaled_paths.append(sc_path)
 
-��\ȋ���[Yȋ�]Y[ˈ���ۘ�]��JN����[�[��Z\��[�����U�YJB�Y��]��]�^\��
-N���]��]�[�[��Z\��[�����U�YJB�^�\^�\[ێ��\��^�\�X����\�˕[Y[�]^\�Y���Z[
-�[\�[Z]H^�YYˈ��Y[��H�\�]Z]�ۙ�ˈ[�H[H�Y[�XZ\��\�ˈ�B�^�\^�\[ۈ\�N���Z[
-��\���[�\��Έ���J_H�B
+        if not scaled_paths:
+            fail("Erro ao converter o video para o formato solicitado.")
+            return
+
+        upd(88, "Juntando todos os clipes...")
+
+        # -- STEP 7: Concatenate --
+        concat_list = out_dir / "concat.txt"
+        with open(concat_list, "w") as f:
+            for sp in scaled_paths:
+                f.write(f"file '{sp.resolve()}'\n")
+
+        output_name = f"corteai_{job_id[:8]}.mp4"
+        output_path = out_dir / output_name
+
+        concat_cmd = (
+            f'ffmpeg -y -f concat -safe 0 -i "{concat_list}" '
+            f'-c copy "{output_path}"'
+        )
+        result = run(concat_cmd, timeout=180)
+
+        if not output_path.exists() or output_path.stat().st_size < 1000:
+            if scaled_paths:
+                shutil.copy(scaled_paths[0], output_path)
+            else:
+                fail("Erro ao finalizar o video. Tente novamente.")
+                return
+
+        upd(98, "Finalizando...")
+
+        # -- STEP 8: Done --
+        actual_clips = len(scaled_paths)
+        probe2 = run(f'ffprobe -v quiet -print_format json -show_format "{output_path}"', timeout=30)
+        try:
+            out_dur = int(float(json.loads(probe2.stdout)["format"]["duration"]))
+        except Exception:
+            out_dur = duration
+
+        final_data = {
+            "status": "done",
+            "progress": 100,
+            "message": "Pronto!",
+            "clips_count": actual_clips,
+            "duration": out_dur,
+            "output_file": output_name,
+            "format": fmt,
+        }
+        status_file.write_text(json.dumps(final_data))
+
+        try:
+            for f in out_dir.iterdir():
+                if f.name.startswith(("clip_", "scaled_", "audio.", "concat.")):
+                    f.unlink(missing_ok=True)
+            if raw_path.exists():
+                raw_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    except subprocess.TimeoutExpired:
+        fail("Tempo limite excedido. O video pode ser muito longo. Tente um video mais curto.")
+    except Exception as e:
+        fail(f"Erro interno: {str(e)}")
