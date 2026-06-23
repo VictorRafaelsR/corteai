@@ -169,51 +169,32 @@ def process_video(job_id, url, fmt, duration, clips, player):
 
         upd(60, "Cortando clipes selecionados...")
 
-        # -- STEP 5: Cut clips --
-        clip_paths = []
+        # -- STEP 5+6: Seek, scale and encode in one pass (avoids keyframe issues) --
+        upd(60, "Cortando e convertendo clipes...")
+        fs = FORMAT_SETTINGS.get(fmt, FORMAT_SETTINGS["tiktok"])
+        tw, th = fs["w"], fs["h"]
+        scale_filter = (
+            f"scale={tw}:{th}:force_original_aspect_ratio=increase,"
+            f"crop={tw}:{th}"
+        )
+        scaled_paths = []
         for idx, t in enumerate(peaks):
             start = max(0, t - clip_dur / 2)
             if start + clip_dur > vid_dur:
                 start = max(0, vid_dur - clip_dur)
-            clip_path = out_dir / f"clip_{idx:02d}.mp4"
-            cut_cmd = (
+            sc_path = out_dir / f"scaled_{idx:02d}.mp4"
+            sc_cmd = (
                 f'ffmpeg -y -ss {start:.2f} -i "{raw_path}" '
                 f'-t {clip_dur:.2f} '
-                f'-c copy '
-                f'"{clip_path}"'
-            )
-            r = run(cut_cmd, timeout=120)
-            if clip_path.exists() and clip_path.stat().st_size > 1000:
-                clip_paths.append(clip_path)
-
-        if not clip_paths:
-            fail("Erro ao cortar clipes. ffmpeg pode nao suportar o codec do video baixado. Tente outro video.")
-            return
-
-        upd(75, "Convertendo para o formato escolhido...")
-
-        # -- STEP 6: Scale and crop --
-        fs = FORMAT_SETTINGS.get(fmt, FORMAT_SETTINGS["tiktok"])
-        tw, th = fs["w"], fs["h"]
-
-        scaled_paths = []
-        for idx, cp in enumerate(clip_paths):
-            sc_path = out_dir / f"scaled_{idx:02d}.mp4"
-            scale_filter = (
-                f"scale={tw}:{th}:force_original_aspect_ratio=increase,"
-                f"crop={tw}:{th}"
-            )
-            sc_cmd = (
-                f'ffmpeg -y -i "{cp}" '
                 f'-vf "{scale_filter}" '
                 f'-c:v libx264 -c:a aac -preset fast '
                 f'"{sc_path}"'
             )
             r = run(sc_cmd, timeout=180)
             if not (sc_path.exists() and sc_path.stat().st_size > 1000):
-                # Fallback: try without specifying codec
                 sc_cmd2 = (
-                    f'ffmpeg -y -i "{cp}" '
+                    f'ffmpeg -y -ss {start:.2f} -i "{raw_path}" '
+                    f'-t {clip_dur:.2f} '
                     f'-vf "{scale_filter}" '
                     f'"{sc_path}"'
                 )
@@ -222,9 +203,10 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 scaled_paths.append(sc_path)
 
         if not scaled_paths:
-            last_err = r.stderr[-300:] if hasattr(r,'stderr') and r.stderr else 'sem detalhe'
-            fail("Erro ao converter. ffmpeg: " + last_err)
+            last_err = (r.stderr or '')[-400:] if hasattr(r,'stderr') else 'sem detalhe'
+            fail("Erro ao gerar clipes. ffmpeg: " + last_err)
             return
+
 
         upd(88, "Juntando todos os clipes...")
 
