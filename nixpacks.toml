@@ -2,7 +2,7 @@
 nixPkgs = ["python311", "ffmpeg", "gcc"]
 
 [phases.install]
-cmds = ["python3 -m venv /opt/venv && /opt/venv/bin/pip install -r requirements.txt"]
+cmds = ["python3 -m venv /opt/venv && /opt/venv/bin/pip install -r requirements.txt && /opt/venv/bin/pip install -U yt-dlp"]
 
 [start]
-cmd = "/opt/venv/bin/gunicorn app:app --workers 2 --timeout 300 --bind 0.0.0.0:$PORT"
+cmd = "/opt/venv/bin/pip install -U yt-dlp -q && /opt/venv/bin/gunicorn app:app --workers 2 --timeout 300 --bind 0.0.0.0:$PORT"
