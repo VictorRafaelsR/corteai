@@ -10,7 +10,7 @@ from flask import Flask, request, jsonify, render_template, send_file, abort
 from processor import process_video, RESULTS_DIR
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 0  # no uploads, only URLs
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB max (JSON only, no file uploads)
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
