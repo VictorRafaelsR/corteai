@@ -155,88 +155,37 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
                     downloaded = True
                 last_err = r.stderr or last_err
         else:
-            # Search: fetch YouTube search page directly and extract video IDs
-            # (ytsearch is blocked on server IPs; direct HTTP with mobile UA works better)
-            import urllib.request as _ureq, urllib.parse as _uparse, re as _re
+            # Search: use yt-dlp ytsearch with tv_embedded player (bypasses login requirement)
+            # tv_embedded is the YouTube player used on external websites - less restrictive
             base = player or (url[url.index(':')+1:] if ':' in url else url)
-
-            def get_yt_ids(query, max_ids=8):
-                """Get YouTube video IDs via Invidious API (no auth needed), fallback to YouTube HTTP."""
-                import urllib.request as _ureq, urllib.parse as _uparse, re as _re, json as _json
-
-                # Method 1: Invidious open API (doesn't require YouTube login)
-                invidious_instances = [
-                    "https://invidious.privacyredirect.com",
-                    "https://inv.tux.pizza",
-                    "https://yt.artemislena.eu",
-                    "https://invidious.nerdvpn.de",
-                ]
-                for inst in invidious_instances:
-                    try:
-                        q = _uparse.quote_plus(query)
-                        api_url = f"{inst}/api/v1/search?q={q}&type=video&page=1"
-                        req = _ureq.Request(api_url, headers={
-                            'User-Agent': 'CorteAI/1.0',
-                            'Accept': 'application/json',
-                        })
-                        with _ureq.urlopen(req, timeout=10) as resp:
-                            data = _json.loads(resp.read().decode())
-                        ids = [item['videoId'] for item in data
-                               if item.get('type') == 'video' and item.get('videoId')]
-                        if ids:
-                            return ids[:max_ids]
-                    except Exception:
-                        continue
-
-                # Method 2: YouTube direct search page (mobile UA, less blocked)
-                try:
-                    q = _uparse.quote_plus(query)
-                    yt_url = f"https://www.youtube.com/results?search_query={q}"
-                    req = _ureq.Request(yt_url, headers={
-                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
-                        'Accept-Language': 'pt-BR,pt;q=0.9',
-                        'Accept': 'text/html',
-                    })
-                    with _ureq.urlopen(req, timeout=15) as resp:
-                        html = resp.read().decode('utf-8', errors='replace')
-                    ids = list(dict.fromkeys(_re.findall(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)))
-                    ids = [i for i in ids if not i.startswith('RD') and len(i) == 11]
-                    if ids:
-                        return ids[:max_ids]
-                except Exception:
-                    pass
-
-                return []
-
-            query_variants = [
-            query_variants = [
-                f"{base} goals",
-                f"{base} highlights",
-                f"{base} best goals",
-                f"{base} melhores momentos",
-                f"{base}",
+            # Queries ordered from most public/available to generic
+            search_variants = [
+                f"ytsearch5:{base} gols",
+                f"ytsearch5:{base} melhores gols",
+                f"ytsearch5:{base} highlights",
+                f"ytsearch5:{base} goals",
+                f"ytsearch5:{base}",
             ]
             prog = 6
-            all_ids_tried = set()
-            for variant in query_variants:
+            for sq in search_variants:
                 if downloaded:
                     break
-                upd(min(prog, 18), f"Buscando '{base}'...")
-                prog += 3
-                video_ids = get_yt_ids(variant)
-                for vid_id in video_ids:
-                    if vid_id in all_ids_tried:
-                        continue
-                    all_ids_tried.add(vid_id)
-                    vid_url = f"https://www.youtube.com/watch?v={vid_id}"
-                    for client in ["android", "ios", "tv_embedded"]:
-                        ok, err = try_dl(vid_url, client=client)
+                for pidx in range(1, 6):
+                    upd(min(prog, 18), f"Buscando '{base}'...")
+                    prog += 2
+                    # Try tv_embedded first (least restrictions), then android
+                    for client in ["tv_embedded", "android", "ios"]:
+                        ok, err = try_dl(sq, pidx=pidx, client=client)
                         if ok:
                             downloaded = True
                             break
                         last_err = err
                     if downloaded:
                         break
+                    is_login = ("Sign in" in last_err or "login" in last_err.lower()
+                                or "age" in last_err.lower() or "unavailable" in last_err.lower())
+                    if not is_login:
+                        break  # Non-login error: move to next query variant
         if not downloaded:
             if "Sign in" in last_err or "login" in last_err.lower():
                 if is_search:
