@@ -161,23 +161,54 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
             base = player or (url[url.index(':')+1:] if ':' in url else url)
 
             def get_yt_ids(query, max_ids=8):
-                """Fetch YouTube search page and extract video IDs."""
+                """Get YouTube video IDs via Invidious API (no auth needed), fallback to YouTube HTTP."""
+                import urllib.request as _ureq, urllib.parse as _uparse, re as _re, json as _json
+
+                # Method 1: Invidious open API (doesn't require YouTube login)
+                invidious_instances = [
+                    "https://invidious.privacyredirect.com",
+                    "https://inv.tux.pizza",
+                    "https://yt.artemislena.eu",
+                    "https://invidious.nerdvpn.de",
+                ]
+                for inst in invidious_instances:
+                    try:
+                        q = _uparse.quote_plus(query)
+                        api_url = f"{inst}/api/v1/search?q={q}&type=video&page=1"
+                        req = _ureq.Request(api_url, headers={
+                            'User-Agent': 'CorteAI/1.0',
+                            'Accept': 'application/json',
+                        })
+                        with _ureq.urlopen(req, timeout=10) as resp:
+                            data = _json.loads(resp.read().decode())
+                        ids = [item['videoId'] for item in data
+                               if item.get('type') == 'video' and item.get('videoId')]
+                        if ids:
+                            return ids[:max_ids]
+                    except Exception:
+                        continue
+
+                # Method 2: YouTube direct search page (mobile UA, less blocked)
                 try:
                     q = _uparse.quote_plus(query)
-                    req_url = f"https://www.youtube.com/results?search_query={q}&sp=EgIQAQ%3D%3D"
-                    headers = {
+                    yt_url = f"https://www.youtube.com/results?search_query={q}"
+                    req = _ureq.Request(yt_url, headers={
                         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
                         'Accept-Language': 'pt-BR,pt;q=0.9',
-                        'Accept': 'text/html,application/xhtml+xml',
-                    }
-                    req = _ureq.Request(req_url, headers=headers)
+                        'Accept': 'text/html',
+                    })
                     with _ureq.urlopen(req, timeout=15) as resp:
                         html = resp.read().decode('utf-8', errors='replace')
                     ids = list(dict.fromkeys(_re.findall(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)))
-                    return [i for i in ids if not i.startswith('RD')][:max_ids]
+                    ids = [i for i in ids if not i.startswith('RD') and len(i) == 11]
+                    if ids:
+                        return ids[:max_ids]
                 except Exception:
-                    return []
+                    pass
 
+                return []
+
+            query_variants = [
             query_variants = [
                 f"{base} goals",
                 f"{base} highlights",
