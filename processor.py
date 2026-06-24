@@ -53,17 +53,12 @@ def get_scale_filter(orient, tw, th):
       The original video is shown full-size centered, no subject cut off.
     """
     if orient == "landscape":
-        # Scale to fit, pad with black if aspect doesn't match
         return (
             f"scale={tw}:{th}:force_original_aspect_ratio=decrease,"
             f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2:black,"
             f"format=yuv420p"
         )
     else:
-        # Blurred background: bg = video blurred/scaled to fill frame
-        #                     fg = video scaled to fit inside frame, centered
-        # fg: scale so it fits within tw x th maintaining aspect ratio
-        # bg: scale to fill (cover), crop center, then blur
         return (
             f"[0:v]scale={tw}:{th}:force_original_aspect_ratio=decrease[fg];"
             f"[0:v]scale={tw}:{th}:force_original_aspect_ratio=increase,"
@@ -125,7 +120,6 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
         else:
             upd(5, "Baixando vídeo do YouTube...")
 
-        # Try 3 methods: android client, tv_embedded, generic
         dl_methods = [
             (f'yt-dlp {cookies_arg} --extractor-args "youtube:player_client=android" '
              f'-f "bestvideo[ext=mp4][height<={max_h}]+bestaudio[ext=m4a]/best[height<={max_h}][ext=mp4]/best" '
@@ -150,9 +144,8 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
             last_err = result.stderr or ""
             upd(8 + i*2, f"Tentativa {i+2}...")
 
-        # For search queries: if first result needs login, try next results (2-5)
         if not downloaded and is_search and ("Sign in" in last_err or "login" in last_err.lower()):
-            search_query = url[url.index(':')+1:]  # "ytsearch1:query" → "query"
+            search_query = url[url.index(':')+1:]
             search_url_multi = f"ytsearch5:{search_query}"
             for pidx in range(2, 6):
                 if raw_path.exists():
@@ -191,7 +184,6 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
             fail("Arquivo baixado inválido. Tente outro vídeo.")
             return
 
-        # Get video duration
         probe = run(f'ffprobe -v quiet -print_format json -show_format "{raw_path}"', timeout=30)
         try:
             vid_dur = float(json.loads(probe.stdout)["format"]["duration"])
@@ -228,8 +220,23 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
 
         # ── STEP 4: Find peaks ────────────────────────────────────────────
         chunk_secs = 0.1
-        min_gap = max(10.0, vid_dur / (clips * 3))
         clip_dur = max(6, min(30, duration // max(clips, 1)))
+
+        # Adapt clip_dur if video is too short to fit all clips
+        if clip_dur * clips > vid_dur:
+            clip_dur = max(3, int((vid_dur - 1) / max(clips, 1)))
+
+        min_gap = max(clip_dur * 0.8, vid_dur / (clips * 4))
+
+        def find_peaks_at_threshold(smoothed, threshold, min_gap, clip_dur, vid_dur):
+            peaks = []
+            for i in range(1, len(smoothed)-1):
+                if smoothed[i] > threshold and smoothed[i] >= smoothed[i-1] and smoothed[i] >= smoothed[i+1]:
+                    t = i * chunk_secs
+                    if not peaks or (t - peaks[-1]) >= min_gap:
+                        if t + clip_dur/2 <= vid_dur:
+                            peaks.append(t)
+            return peaks
 
         if len(energy) > 10:
             window = int(2.0 / chunk_secs)
@@ -239,21 +246,28 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
                 hi = min(len(energy), i + window//2)
                 smoothed.append(sum(energy[lo:hi]) / (hi - lo))
 
-            threshold = sorted(smoothed)[int(len(smoothed) * 0.85)]
+            # Try progressively lower thresholds until we have enough peaks
             peaks = []
-            for i in range(1, len(smoothed)-1):
-                if smoothed[i] > threshold and smoothed[i] >= smoothed[i-1] and smoothed[i] >= smoothed[i+1]:
-                    t = i * chunk_secs
-                    if not peaks or (t - peaks[-1]) >= min_gap:
-                        if t + clip_dur/2 <= vid_dur:
-                            peaks.append(t)
+            for pct in [0.85, 0.70, 0.55, 0.40, 0.20, 0.05]:
+                threshold = sorted(smoothed)[int(len(smoothed) * pct)]
+                peaks = find_peaks_at_threshold(smoothed, threshold, min_gap, clip_dur, vid_dur)
+                if len(peaks) >= clips:
+                    break
 
             peaks.sort(key=lambda t: smoothed[int(t / chunk_secs)], reverse=True)
             peaks = peaks[:clips]
             peaks.sort()
         else:
-            step = max(1, (vid_dur - clip_dur) / max(clips, 1))
-            peaks = [step * i + clip_dur/2 for i in range(clips) if step * i + clip_dur/2 + clip_dur/2 <= vid_dur]
+            smoothed = energy or [0]
+
+        # Fallback: evenly space peaks if not enough were found
+        if len(peaks) < clips:
+            usable = vid_dur - clip_dur
+            if usable > 0:
+                step = usable / max(clips - 1, 1)
+                peaks = [clip_dur/2 + step * i for i in range(clips)]
+            else:
+                peaks = [vid_dur / 2]
             peaks = peaks[:clips]
 
         if not peaks:
@@ -299,7 +313,6 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
             sc_path = out_dir / f"scaled_{idx:02d}.mp4"
 
             if orient == "landscape":
-                # Simple filtergraph (single input)
                 sc_cmd = (
                     f'ffmpeg -y -i "{cp}" '
                     f'-vf "{scale_filter}" '
@@ -308,7 +321,6 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
                     f'"{sc_path}"'
                 )
             else:
-                # Complex filtergraph with [0:v] split (portrait/square)
                 sc_cmd = (
                     f'ffmpeg -y -i "{cp}" '
                     f'-filter_complex "{scale_filter}" '
@@ -327,7 +339,7 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
 
         upd(88, "Juntando todos os clipes...")
 
-        # ── STEP 7: Concatenate (re-encode to avoid PTS issues) ───────────
+        # ── STEP 7: Concatenate ───────────────────────────────────────────
         concat_list = out_dir / "concat.txt"
         with open(concat_list, "w") as f:
             for sp in scaled_paths:
@@ -371,7 +383,6 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
             "quality": quality,
         }))
 
-        # Cleanup intermediates
         try:
             for f in out_dir.iterdir():
                 if f.name.startswith(("clip_", "scaled_", "audio.", "concat.")):
