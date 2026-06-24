@@ -150,9 +150,33 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
             last_err = result.stderr or ""
             upd(8 + i*2, f"Tentativa {i+2}...")
 
+        # For search queries: if first result needs login, try next results (2-5)
+        if not downloaded and is_search and ("Sign in" in last_err or "login" in last_err.lower()):
+            search_query = url[url.index(':')+1:]  # "ytsearch1:query" → "query"
+            search_url_multi = f"ytsearch5:{search_query}"
+            for pidx in range(2, 6):
+                if raw_path.exists():
+                    raw_path.unlink()
+                fb_cmd = (
+                    f'yt-dlp {cookies_arg} --extractor-args "youtube:player_client=android" '
+                    f'--playlist-items {pidx} '
+                    f'-f "bestvideo[ext=mp4][height<={max_h}]+bestaudio[ext=m4a]/best[height<={max_h}][ext=mp4]/best" '
+                    f'--merge-output-format mp4 --no-playlist --socket-timeout 30 '
+                    f'-o "{raw_path}" "{search_url_multi}"'
+                )
+                upd(14 + pidx*2, f"Tentando resultado alternativo {pidx-1}...")
+                r = run(fb_cmd, timeout=300)
+                if r.returncode == 0 and raw_path.exists() and raw_path.stat().st_size > 10000:
+                    downloaded = True
+                    break
+                last_err = r.stderr or ""
+
         if not downloaded:
             if "Sign in" in last_err or "login" in last_err.lower():
-                fail("Este vídeo requer login no YouTube. Use um vídeo público.")
+                if is_search:
+                    fail(f"Os vídeos encontrados para '{player}' requerem login. Tente um nome diferente ou cole um link público direto.")
+                else:
+                    fail("Este vídeo requer login no YouTube. Use um vídeo público.")
             elif "Private video" in last_err:
                 fail("Vídeo privado. Use um link de vídeo público.")
             elif "Video unavailable" in last_err:
