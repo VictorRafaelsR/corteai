@@ -123,13 +123,15 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
         downloaded = False
         last_err = ""
 
-        def try_dl(dl_url, pidx=None, client="android"):
-            """Try one download. Returns (success, stderr)."""
+        def try_dl(dl_url, pidx=None, client="tv_embedded", use_cookies=False):
+            """Try one download without cookies (public videos don't need them)."""
             if raw_path.exists():
                 raw_path.unlink()
             playlist_arg = f"--playlist-items {pidx}" if pidx else "--no-playlist"
+            c_arg = cookies_arg if (use_cookies and cookies_arg) else ""
             cmd = (
-                f'yt-dlp {cookies_arg} --extractor-args "youtube:player_client={client}" '
+                f'yt-dlp {c_arg} --extractor-args "youtube:player_client={client}" '
+                f'--age-limit 99 --no-warnings '
                 f'-f "bestvideo[ext=mp4][height<={max_h}]+bestaudio[ext=m4a]/best[height<={max_h}][ext=mp4]/best" '
                 f'--merge-output-format mp4 {playlist_arg} --socket-timeout 30 '
                 f'-o "{raw_path}" "{dl_url}"'
@@ -139,26 +141,35 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
             return ok, (r.stderr or "")
 
         if not is_search:
-            # Direct URL: android → tv_embedded → generic best
-            for client in ["android", "tv_embedded"]:
-                ok, err = try_dl(url, client=client)
+            # Direct URL: try without cookies first (tv_embedded = embed player, no login needed for public)
+            for client in ["tv_embedded", "ios", "android"]:
+                upd(8, "Baixando vídeo...")
+                ok, err = try_dl(url, client=client, use_cookies=False)
                 if ok:
                     downloaded = True
                     break
                 last_err = err
-                upd(8, "Tentando método alternativo...")
+            # Fallback: try WITH cookies (in case it's age-restricted)
+            if not downloaded and cookies_arg:
+                for client in ["tv_embedded", "android"]:
+                    ok, err = try_dl(url, client=client, use_cookies=True)
+                    if ok:
+                        downloaded = True
+                        break
+                    last_err = err
+            # Last resort: generic format
             if not downloaded:
                 if raw_path.exists():
                     raw_path.unlink()
-                r = run(f'yt-dlp {cookies_arg} --no-playlist -f best -o "{raw_path}" "{url}"', timeout=300)
+                r = run(f'yt-dlp --extractor-args "youtube:player_client=tv_embedded" '
+                        f'--age-limit 99 --no-playlist -f best -o "{raw_path}" "{url}"', timeout=300)
                 if r.returncode == 0 and raw_path.exists() and raw_path.stat().st_size > 10000:
                     downloaded = True
                 last_err = r.stderr or last_err
+
         else:
-            # Search: use yt-dlp ytsearch with tv_embedded player (bypasses login requirement)
-            # tv_embedded is the YouTube player used on external websites - less restrictive
+            # Search: ytsearch with tv_embedded (no cookies, least restrictive player)
             base = player or (url[url.index(':')+1:] if ':' in url else url)
-            # Queries ordered from most public/available to generic
             search_variants = [
                 f"ytsearch5:{base} gols",
                 f"ytsearch5:{base} melhores gols",
@@ -173,9 +184,8 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
                 for pidx in range(1, 6):
                     upd(min(prog, 18), f"Buscando '{base}'...")
                     prog += 2
-                    # Try tv_embedded first (least restrictions), then android
-                    for client in ["tv_embedded", "android", "ios"]:
-                        ok, err = try_dl(sq, pidx=pidx, client=client)
+                    for client in ["tv_embedded", "ios", "android"]:
+                        ok, err = try_dl(sq, pidx=pidx, client=client, use_cookies=False)
                         if ok:
                             downloaded = True
                             break
@@ -185,7 +195,7 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
                     is_login = ("Sign in" in last_err or "login" in last_err.lower()
                                 or "age" in last_err.lower() or "unavailable" in last_err.lower())
                     if not is_login:
-                        break  # Non-login error: move to next query variant
+                        break
         if not downloaded:
             if "Sign in" in last_err or "login" in last_err.lower():
                 if is_search:
