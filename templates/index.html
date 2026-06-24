@@ -100,6 +100,12 @@ header{background:#000;border-bottom:1px solid #1A1A1A;padding:16px 24px;positio
 .clips-num{font-size:40px;font-weight:900;color:var(--orange);min-width:50px;text-align:center;line-height:1}
 .clips-desc{font-size:12px;color:var(--gray);line-height:1.6;flex:1}
 .clips-desc strong{color:var(--text)}
+.qua{background:var(--bg3);border:2px solid var(--border2);border-radius:14px;padding:16px 10px;text-align:center;cursor:pointer;transition:all .2s}
+.qua.selected{border-color:var(--orange);background:rgba(255,107,0,.05)}
+.qua .dur-time{color:var(--gray)}
+.qua.selected .dur-time{color:var(--orange)}
+.qua .dur-label{font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--gray);margin-top:4px}
+.qua.selected .dur-label{color:var(--orange2)}
 
 /* SUBMIT */
 .submit-wrap{max-width:520px;width:calc(100% - 40px);margin:0 auto 16px}
@@ -247,6 +253,24 @@ footer{text-align:center;padding:24px 20px 40px;font-size:11px;color:#333;border
     </div>
   </div>
 
+  <div class="card">
+    <div class="card-title"><div class="card-title-icon">🎥</div> Qualidade do vídeo</div>
+    <div class="dur-grid">
+      <div class="qua" onclick="selectQuality('360p',this)">
+        <div class="dur-time" style="font-size:16px">360p</div>
+        <div class="dur-label">LEVE</div>
+      </div>
+      <div class="qua selected" onclick="selectQuality('720p',this)">
+        <div class="dur-time" style="font-size:16px">720p</div>
+        <div class="dur-label">PADRÃO HD</div>
+      </div>
+      <div class="qua" onclick="selectQuality('1080p',this)">
+        <div class="dur-time" style="font-size:16px">1080p</div>
+        <div class="dur-label">FULL HD</div>
+      </div>
+    </div>
+  </div>
+
   <div class="submit-wrap">
     <button class="submit-btn" id="submitBtn" onclick="startProcessing()">
       ⚡ &nbsp;GERAR HIGHLIGHTS COM IA
@@ -309,7 +333,7 @@ footer{text-align:center;padding:24px 20px 40px;font-size:11px;color:#333;border
 <footer>CorteAI © 2026 — Tecnologia de IA para criadores de conteúdo</footer>
 
 <script>
-let selectedFormat='tiktok',selectedDur=30,clipsCount=5,jobId=null,pollInterval=null;
+let selectedFormat='tiktok',selectedDur=30,clipsCount=5,selectedQuality='720p',jobId=null,pollInterval=null;
 
 function onUrlInput(v){
   const c=document.getElementById('urlClear');
@@ -384,7 +408,7 @@ function startProcessing(){
   fetch('/process',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({url,format:selectedFormat,duration:selectedDur,clips:clipsCount,player})
+    body:JSON.stringify({url,format:selectedFormat,duration:selectedDur,clips:clipsCount,player,quality:selectedQuality})
   }).then(r=>r.json()).then(data=>{
     if(data.job_id){jobId=data.job_id;pollProgress();}
     else{showError(data.error||'Erro ao iniciar');}
