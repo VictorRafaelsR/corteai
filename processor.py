@@ -155,33 +155,57 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
                     downloaded = True
                 last_err = r.stderr or last_err
         else:
-            # Search: try multiple query variants, each with up to 5 results
+            # Search: fetch YouTube search page directly and extract video IDs
+            # (ytsearch is blocked on server IPs; direct HTTP with mobile UA works better)
+            import urllib.request as _ureq, urllib.parse as _uparse, re as _re
             base = player or (url[url.index(':')+1:] if ':' in url else url)
-            search_pools = [
-                f"ytsearch5:{base} highlights",
-                f"ytsearch5:{base} goals",
-                f"ytsearch5:{base} best goals",
-                f"ytsearch5:{base} melhores momentos",
-                f"ytsearch5:{base}",
+
+            def get_yt_ids(query, max_ids=8):
+                """Fetch YouTube search page and extract video IDs."""
+                try:
+                    q = _uparse.quote_plus(query)
+                    req_url = f"https://www.youtube.com/results?search_query={q}&sp=EgIQAQ%3D%3D"
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
+                        'Accept-Language': 'pt-BR,pt;q=0.9',
+                        'Accept': 'text/html,application/xhtml+xml',
+                    }
+                    req = _ureq.Request(req_url, headers=headers)
+                    with _ureq.urlopen(req, timeout=15) as resp:
+                        html = resp.read().decode('utf-8', errors='replace')
+                    ids = list(dict.fromkeys(_re.findall(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)))
+                    return [i for i in ids if not i.startswith('RD')][:max_ids]
+                except Exception:
+                    return []
+
+            query_variants = [
+                f"{base} goals",
+                f"{base} highlights",
+                f"{base} best goals",
+                f"{base} melhores momentos",
+                f"{base}",
             ]
             prog = 6
-            for pool_url in search_pools:
+            all_ids_tried = set()
+            for variant in query_variants:
                 if downloaded:
                     break
-                for pidx in range(1, 6):
-                    upd(min(prog, 18), f"Buscando '{base}'...")
-                    prog += 2
-                    ok, err = try_dl(pool_url, pidx=pidx, client="android")
-                    if ok:
-                        downloaded = True
+                upd(min(prog, 18), f"Buscando '{base}'...")
+                prog += 3
+                video_ids = get_yt_ids(variant)
+                for vid_id in video_ids:
+                    if vid_id in all_ids_tried:
+                        continue
+                    all_ids_tried.add(vid_id)
+                    vid_url = f"https://www.youtube.com/watch?v={vid_id}"
+                    for client in ["android", "ios", "tv_embedded"]:
+                        ok, err = try_dl(vid_url, client=client)
+                        if ok:
+                            downloaded = True
+                            break
+                        last_err = err
+                    if downloaded:
                         break
-                    last_err = err
-                    # If not a login/age issue, skip remaining results in this pool
-                    is_restricted = ("Sign in" in err or "login" in err.lower()
-                                     or "age" in err.lower() or "unavailable" in err.lower())
-                    if not is_restricted:
-                        break
-
         if not downloaded:
             if "Sign in" in last_err or "login" in last_err.lower():
                 if is_search:
