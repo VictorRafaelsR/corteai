@@ -251,13 +251,13 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
 
         # ── STEP 4: Find peaks ────────────────────────────────────────────
         chunk_secs = 0.1
-        clip_dur = max(6, min(30, duration // max(clips, 1)))
+        clip_dur = max(10, min(120, int(duration)))
 
         # Adapt clip_dur if video is too short to fit all clips
         if clip_dur * clips > vid_dur:
             clip_dur = max(3, int((vid_dur - 1) / max(clips, 1)))
 
-        min_gap = max(clip_dur * 0.8, vid_dur / (clips * 4))
+        min_gap = max(clip_dur + 2.0, (vid_dur - clip_dur) / max(clips + 1, 2))
 
         def find_peaks_at_threshold(smoothed, threshold, min_gap, clip_dur, vid_dur):
             peaks = []
@@ -301,8 +301,19 @@ def process_video(job_id, url, fmt, duration, clips, player, quality="720p"):
                 peaks = [vid_dur / 2]
             peaks = peaks[:clips]
 
+        # Fill missing peaks with evenly spaced positions
+        if len(peaks) < clips:
+            step = (vid_dur - clip_dur) / max(clips, 1)
+            for i in range(clips):
+                t = clip_dur / 2 + step * i
+                if t + clip_dur / 2 <= vid_dur:
+                    if all(abs(t - p) >= min_gap for p in peaks):
+                        peaks.append(t)
+                if len(peaks) >= clips:
+                    break
+            peaks = sorted(peaks[:clips])
         if not peaks:
-            peaks = [vid_dur * 0.1]
+            peaks = [max(clip_dur / 2, vid_dur * 0.1)]
 
         if player:
             upd(55, f"Filtrando melhores momentos para '{player}'...")
