@@ -18,44 +18,38 @@ def run(cmd, timeout=300, **kw):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout, **kw)
 
 def check_tools():
-    """Return (yt_dlp_ok, ffmpeg_ok)."""
     yt = run("yt-dlp --version", timeout=10)
     ff = run("ffmpeg -version", timeout=10)
     return yt.returncode == 0, ff.returncode == 0
 
 def try_download(url, raw_path, timeout=360):
     """
-    Try multiple download strategies in order.
+    Try multiple download strategies. iOS and mweb clients bypass
+    YouTube's PO-token / datacenter-IP restrictions (2025-2026).
     Returns (success: bool, last_error: str).
     """
-    base_flags = "--no-playlist --no-check-certificates --socket-timeout 30"
+    # Common safe flags
+    safe = "--no-playlist --no-check-certificates --socket-timeout 30"
+    out  = f'-o "{raw_path}"'
 
     strategies = [
-        # 1. TV Embedded client — bypasses most age/region restrictions
-        (
-            f'yt-dlp -f "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best" '
-            f'--merge-output-format mp4 '
-            f'--extractor-args "youtube:player_client=tv_embedded" '
-            f'{base_flags} -o "{raw_path}"'
-        ),
-        # 2. Android client — another effective bypass
-        (
-            f'yt-dlp -f "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]/best" '
-            f'--merge-output-format mp4 '
-            f'--extractor-args "youtube:player_client=android" '
-            f'{base_flags} -o "{raw_path}"'
-        ),
-        # 3. Web client, geo bypass, simplified format
-        (
-            f'yt-dlp -f "best[ext=mp4]/best" '
-            f'--geo-bypass '
-            f'{base_flags} -o "{raw_path}"'
-        ),
-        # 4. Absolute fallback — any format, longer timeout
-        (
-            f'yt-dlp --no-playlist --no-check-certificates --socket-timeout 60 '
-            f'-o "{raw_path}"'
-        ),
+        # 1. iOS — most reliable from datacenter IPs in 2026
+        f'yt-dlp {safe} --extractor-args "youtube:player_client=ios" -f "best[ext=mp4]/best" {out}',
+
+        # 2. mweb — mobile web, second most reliable
+        f'yt-dlp {safe} --extractor-args "youtube:player_client=mweb" -f "best[ext=mp4]/best" {out}',
+
+        # 3. tv_embedded with missing_pot (skips PO-token requirement)
+        f'yt-dlp {safe} --extractor-args "youtube:player_client=tv_embedded,formats=missing_pot" -f "best[ext=mp4]/best" {out}',
+
+        # 4. android client
+        f'yt-dlp {safe} --extractor-args "youtube:player_client=android" -f "best[ext=mp4]/best" {out}',
+
+        # 5. web_embedded
+        f'yt-dlp {safe} --extractor-args "youtube:player_client=web_embedded" -f "best[ext=mp4]/best" {out}',
+
+        # 6. Absolute fallback — let yt-dlp pick any working client
+        f'yt-dlp {safe} --socket-timeout 60 -f "best" {out}',
     ]
 
     last_err = ""
@@ -64,7 +58,6 @@ def try_download(url, raw_path, timeout=360):
         if result.returncode == 0 and raw_path.exists() and raw_path.stat().st_size > 10000:
             return True, ""
         last_err = (result.stderr or result.stdout or "").strip()
-        # Remove partial download before next attempt
         try:
             if raw_path.exists():
                 raw_path.unlink()
@@ -75,7 +68,6 @@ def try_download(url, raw_path, timeout=360):
 
 
 def classify_download_error(err_text):
-    """Return a user-friendly Portuguese error message."""
     err = err_text.lower()
     if "sign in" in err or "login" in err or "requires authentication" in err:
         return "Este vídeo requer login no YouTube. Use um vídeo público."
@@ -91,11 +83,12 @@ def classify_download_error(err_text):
         return "Vídeo não disponível nesta região."
     if "network" in err or "connection" in err or "timeout" in err:
         return "Erro de conexão ao baixar o vídeo. Tente novamente."
+    if "pot" in err or "proof of origin" in err or "datacenter" in err:
+        return "Vídeo bloqueado pelo YouTube para servidores. Tente um vídeo diferente ou mais curto."
     return "Não foi possível baixar o vídeo. Verifique se o link é público e tente novamente."
 
 
 def process_video(job_id, url, fmt, duration, clips, player):
-    """Main pipeline — runs in a background thread."""
     out_dir = RESULTS_DIR / job_id
     out_dir.mkdir(exist_ok=True)
     status_file = RESULTS_DIR / f"{job_id}.json"
@@ -138,7 +131,6 @@ def process_video(job_id, url, fmt, duration, clips, player):
         success, err_text = try_download(url, raw_path, timeout=360)
 
         if not success:
-            # Last resort: update yt-dlp and retry
             upd(9, "Atualizando yt-dlp e tentando novamente...")
             run(f"{sys.executable} -m pip install -U yt-dlp -q", timeout=120)
             success, err_text = try_download(url, raw_path, timeout=360)
@@ -189,11 +181,7 @@ def process_video(job_id, url, fmt, duration, clips, player):
 
         # STEP 4: FIND PEAKS
         chunk_secs = 0.1
-
-        # FIX: clip_dur = per-clip duration the user asked for — do NOT divide by clips
         clip_dur = max(10, min(120, int(duration)))
-
-        # FIX: min_gap must be >= clip_dur so clips never overlap
         min_gap = max(clip_dur + 2.0, (vid_dur - clip_dur) / max(clips + 1, 2))
 
         peaks = []
@@ -205,7 +193,6 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 hi = min(len(energy), i + window // 2)
                 smoothed.append(sum(energy[lo:hi]) / (hi - lo))
 
-            # Progressive thresholds — keep lowering until we have enough peaks
             for pct in [0.85, 0.75, 0.65, 0.50, 0.35, 0.20]:
                 if len(peaks) >= clips:
                     break
@@ -218,16 +205,13 @@ def process_video(job_id, url, fmt, duration, clips, player):
                         if t + clip_dur / 2 <= vid_dur:
                             if all(abs(t - p) >= min_gap for p in peaks):
                                 peaks.append(t)
-                # Keep only the loudest peaks found so far
                 peaks.sort(
                     key=lambda t: smoothed[int(min(t / chunk_secs, len(smoothed) - 1))],
                     reverse=True,
                 )
                 peaks = peaks[:clips]
-
             peaks.sort()
 
-        # FIX: fill missing peaks with evenly spaced positions
         if len(peaks) < clips:
             step = (vid_dur - clip_dur) / max(clips, 1)
             for i in range(clips):
@@ -239,7 +223,6 @@ def process_video(job_id, url, fmt, duration, clips, player):
                     break
             peaks = sorted(peaks[:clips])
 
-        # Absolute last resort
         if not peaks:
             peaks = [max(clip_dur / 2, vid_dur * 0.1)]
 
@@ -257,9 +240,7 @@ def process_video(job_id, url, fmt, duration, clips, player):
             clip_path = out_dir / f"clip_{idx:02d}.mp4"
             cut_cmd = (
                 f'ffmpeg -y -ss {start:.2f} -i "{raw_path}" '
-                f'-t {clip_dur:.2f} '
-                f'-c:v libx264 -c:a aac -preset fast '
-                f'"{clip_path}"'
+                f'-t {clip_dur:.2f} -c:v libx264 -c:a aac -preset fast "{clip_path}"'
             )
             r = run(cut_cmd, timeout=120)
             if clip_path.exists() and clip_path.stat().st_size > 1000:
@@ -274,19 +255,15 @@ def process_video(job_id, url, fmt, duration, clips, player):
         # STEP 6: SCALE & CROP
         fs = FORMAT_SETTINGS.get(fmt, FORMAT_SETTINGS["tiktok"])
         tw, th = fs["w"], fs["h"]
-
         scaled_paths = []
         for idx, cp in enumerate(clip_paths):
             sc_path = out_dir / f"scaled_{idx:02d}.mp4"
             scale_filter = (
-                f"scale={tw}:{th}:force_original_aspect_ratio=increase,"
-                f"crop={tw}:{th}"
+                f"scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}"
             )
             sc_cmd = (
-                f'ffmpeg -y -i "{cp}" '
-                f'-vf "{scale_filter}" '
-                f'-c:v libx264 -c:a aac -preset fast '
-                f'"{sc_path}"'
+                f'ffmpeg -y -i "{cp}" -vf "{scale_filter}" '
+                f'-c:v libx264 -c:a aac -preset fast "{sc_path}"'
             )
             r = run(sc_cmd, timeout=180)
             if sc_path.exists() and sc_path.stat().st_size > 1000:
@@ -306,12 +283,10 @@ def process_video(job_id, url, fmt, duration, clips, player):
 
         output_name = f"corteai_{job_id[:8]}.mp4"
         output_path = out_dir / output_name
-
-        concat_cmd = (
-            f'ffmpeg -y -f concat -safe 0 -i "{concat_list}" '
-            f'-c copy "{output_path}"'
+        run(
+            f'ffmpeg -y -f concat -safe 0 -i "{concat_list}" -c copy "{output_path}"',
+            timeout=180,
         )
-        run(concat_cmd, timeout=180)
 
         if not output_path.exists() or output_path.stat().st_size < 1000:
             if scaled_paths:
@@ -325,26 +300,19 @@ def process_video(job_id, url, fmt, duration, clips, player):
         # STEP 8: DONE
         actual_clips = len(scaled_paths)
         probe2 = run(
-            f'ffprobe -v quiet -print_format json -show_format "{output_path}"',
-            timeout=30,
+            f'ffprobe -v quiet -print_format json -show_format "{output_path}"', timeout=30
         )
         try:
             out_dur = int(float(json.loads(probe2.stdout)["format"]["duration"]))
         except Exception:
             out_dur = duration * actual_clips
 
-        final_data = {
-            "status": "done",
-            "progress": 100,
-            "message": "Pronto!",
-            "clips_count": actual_clips,
-            "duration": out_dur,
-            "output_file": output_name,
-            "format": fmt,
-        }
-        status_file.write_text(json.dumps(final_data))
+        status_file.write_text(json.dumps({
+            "status": "done", "progress": 100, "message": "Pronto!",
+            "clips_count": actual_clips, "duration": out_dur,
+            "output_file": output_name, "format": fmt,
+        }))
 
-        # Cleanup temp files
         try:
             for f in out_dir.iterdir():
                 if f.name.startswith(("clip_", "scaled_", "audio.", "concat.")):
