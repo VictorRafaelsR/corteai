@@ -1,5 +1,5 @@
 """
-CorteAI — Video Processor (diagnostic build)
+CorteAI — Video Processor
 """
 import os, subprocess, json, struct, math, shutil, sys
 from pathlib import Path
@@ -54,26 +54,26 @@ def classify_download_error(err_text):
     return "Não foi possível baixar o vídeo. Verifique se o link é público."
 
 def cut_and_scale(inp, out_path, start, dur, tw, th):
-    """Returns (success, last_stderr)."""
+    """Cut [start, start+dur] and scale/crop to tw x th. 4 fallbacks."""
     def valid(p):
         return Path(p).exists() and Path(p).stat().st_size > 1000
 
     cmds = [
-        # 1. fill + crop
+        # 1. fill + crop (preferred)
         (f'ffmpeg -y -ss {start:.2f} -i "{inp}" -t {dur:.2f} '
          f'-vf "scale={tw}:{th}:force_original_aspect_ratio=increase:force_divisible_by=2,'
          f'crop={tw}:{th},setsar=1" '
          f'-c:v libx264 -c:a aac -preset fast -pix_fmt yuv420p "{out_path}"'),
-        # 2. pad (no crop)
+        # 2. pad (black bars, no crop)
         (f'ffmpeg -y -ss {start:.2f} -i "{inp}" -t {dur:.2f} '
          f'-vf "scale={tw}:{th}:force_original_aspect_ratio=decrease:force_divisible_by=2,'
          f'pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2:black,setsar=1" '
          f'-c:v libx264 -c:a aac -preset fast -pix_fmt yuv420p "{out_path}"'),
-        # 3. brutal stretch
+        # 3. stretch (ignores aspect ratio)
         (f'ffmpeg -y -ss {start:.2f} -i "{inp}" -t {dur:.2f} '
          f'-vf "scale={tw}:{th}" '
          f'-c:v libx264 -c:a aac -preset fast -pix_fmt yuv420p "{out_path}"'),
-        # 4. no video filter at all — just cut and re-encode
+        # 4. no filter — just cut and re-encode
         (f'ffmpeg -y -ss {start:.2f} -i "{inp}" -t {dur:.2f} '
          f'-c:v libx264 -c:a aac -preset fast -pix_fmt yuv420p "{out_path}"'),
     ]
@@ -84,7 +84,7 @@ def cut_and_scale(inp, out_path, start, dur, tw, th):
             if Path(out_path).exists(): Path(out_path).unlink()
         except Exception: pass
         r = run(cmd, timeout=180)
-        last_err = (r.stderr or r.stdout or "")[-800:]
+        last_err = (r.stderr or r.stdout or "")[-600:]
         if valid(out_path):
             return True, ""
     return False, last_err
@@ -109,6 +109,7 @@ def process_video(job_id, url, fmt, duration, clips, player):
         except Exception: pass
 
     try:
+        # PRE-FLIGHT
         upd(2, "Verificando ferramentas...")
         yt_ok, ff_ok = check_tools()
         if not ff_ok:
@@ -122,6 +123,7 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 fail("yt-dlp não encontrado no servidor. Contate o suporte.")
                 return
 
+        # STEP 1: DOWNLOAD
         upd(5, "Baixando vídeo...")
         raw_path = out_dir / "raw.mp4"
         success, err_text = try_download(url, raw_path, timeout=360)
@@ -133,7 +135,7 @@ def process_video(job_id, url, fmt, duration, clips, player):
             fail(classify_download_error(err_text))
             return
 
-        # Re-encode to clean H264/AAC
+        # STEP 1b: Re-encode to guaranteed H264/AAC
         upd(12, "Padronizando formato do vídeo...")
         clean_path = out_dir / "clean.mp4"
         r = run(
@@ -143,11 +145,12 @@ def process_video(job_id, url, fmt, duration, clips, player):
         )
         source = clean_path if (r.returncode == 0 and clean_path.exists() and clean_path.stat().st_size > 10000) else raw_path
 
+        # PROBE DURATION
         probe = run(f'ffprobe -v quiet -print_format json -show_format "{source}"', timeout=30)
         try:
             vid_dur = float(json.loads(probe.stdout)["format"]["duration"])
         except Exception:
-            fail(f"Arquivo corrompido. ffprobe: {probe.stderr[:300]}")
+            fail(f"Arquivo corrompido. ffprobe: {probe.stderr[:200]}")
             return
 
         if vid_dur < 5:
@@ -173,9 +176,18 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 i += chunk_size
 
         upd(50, "Selecionando os melhores momentos...")
+
+        # STEP 4: FIND PEAKS
         chunk_secs = 0.1
+
+        # clip_dur: clamp so N clips can actually fit in the video
         clip_dur = max(10, min(120, int(duration)))
-        min_gap = max(clip_dur + 2.0, (vid_dur - clip_dur) / max(clips + 1, 2))
+        if clips * clip_dur > vid_dur:
+            clip_dur = max(10, int(vid_dur / max(clips, 1)) - 2)
+
+        # min_gap for AUDIO peak detection only — prevents overlapping clips
+        peak_min_gap = max(clip_dur + 2.0, (vid_dur - clip_dur) / max(clips + 1, 2))
+
         peaks = []
         if len(energy) > 10:
             window = int(2.0 / chunk_secs)
@@ -184,25 +196,41 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 lo = max(0, i - window // 2)
                 hi = min(len(energy), i + window // 2)
                 smoothed.append(sum(energy[lo:hi]) / (hi - lo))
+
+            # Progressive thresholds
             for pct in [0.85, 0.75, 0.65, 0.50, 0.35, 0.20]:
                 if len(peaks) >= clips: break
                 threshold = sorted(smoothed)[int(len(smoothed) * pct)]
                 for i in range(1, len(smoothed) - 1):
                     if smoothed[i] > threshold and smoothed[i] >= smoothed[i-1] and smoothed[i] >= smoothed[i+1]:
                         t = i * chunk_secs
-                        if t + clip_dur / 2 <= vid_dur and all(abs(t - p) >= min_gap for p in peaks):
+                        if t + clip_dur / 2 <= vid_dur and all(abs(t - p) >= peak_min_gap for p in peaks):
                             peaks.append(t)
                 peaks.sort(key=lambda t: smoothed[int(min(t/chunk_secs, len(smoothed)-1))], reverse=True)
                 peaks = peaks[:clips]
             peaks.sort()
+
+        # EVENLY SPACED FALLBACK — use clip_dur as min gap (just no overlap, not large peak_min_gap)
         if len(peaks) < clips:
             step = (vid_dur - clip_dur) / max(clips, 1)
             for i in range(clips):
-                t = clip_dur / 2 + step * i
-                if t + clip_dur / 2 <= vid_dur and all(abs(t - p) >= min_gap for p in peaks):
-                    peaks.append(t)
                 if len(peaks) >= clips: break
+                t = clip_dur / 2 + step * i
+                if t + clip_dur / 2 <= vid_dur:
+                    if all(abs(t - p) >= clip_dur for p in peaks):  # just no overlap
+                        peaks.append(t)
             peaks = sorted(peaks[:clips])
+
+        # FORCE N CLIPS — override everything, guarantee requested count
+        if len(peaks) < clips:
+            step = max(clip_dur, vid_dur / clips)
+            peaks = []
+            for i in range(clips):
+                t = clip_dur / 2 + step * i
+                if t <= vid_dur:
+                    peaks.append(min(t, vid_dur - clip_dur / 2))
+            peaks = sorted(set(peaks))[:clips]
+
         if not peaks:
             peaks = [max(clip_dur / 2, vid_dur * 0.1)]
 
@@ -225,9 +253,8 @@ def process_video(job_id, url, fmt, duration, clips, player):
                 scaled_paths.append(sc_path)
 
         if not scaled_paths:
-            # Include FFmpeg error for diagnosis
-            err_snippet = last_ffmpeg_err[-400:].replace(chr(10), " ").strip() if last_ffmpeg_err else "sem detalhes"
-            fail(f"FFmpeg falhou: {err_snippet}")
+            err_snippet = last_ffmpeg_err[-400:].replace(chr(10), " ").strip()
+            fail(f"FFmpeg falhou na conversão: {err_snippet}")
             return
 
         upd(88, "Juntando todos os clipes...")
@@ -250,7 +277,7 @@ def process_video(job_id, url, fmt, duration, clips, player):
         try:
             out_dur = int(float(json.loads(probe2.stdout)["format"]["duration"]))
         except Exception:
-            out_dur = duration * actual_clips
+            out_dur = clip_dur * actual_clips
 
         status_file.write_text(json.dumps({
             "status": "done", "progress": 100, "message": "Pronto!",
