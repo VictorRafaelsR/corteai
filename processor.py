@@ -23,26 +23,17 @@ def check_tools():
     return yt.returncode == 0, ff.returncode == 0
 
 def try_download(url, raw_path, timeout=360):
-    """
-    Try multiple download strategies. iOS/mweb bypass YT datacenter restrictions.
-    Always requests mp4 with merged audio to ensure FFmpeg compatibility.
-    """
+    """Try 6 strategies. ios/mweb bypass YT datacenter restrictions (2025-2026)."""
     safe = "--no-playlist --no-check-certificates --socket-timeout 30"
     fmt  = '-f "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best" --merge-output-format mp4'
     out  = f'-o "{raw_path}"'
 
     strategies = [
-        # 1. iOS — most reliable from datacenter IPs in 2025-2026
         f'yt-dlp {safe} --extractor-args "youtube:player_client=ios" {fmt} {out}',
-        # 2. mweb — mobile web
         f'yt-dlp {safe} --extractor-args "youtube:player_client=mweb" {fmt} {out}',
-        # 3. tv_embedded + skip PO-token
         f'yt-dlp {safe} --extractor-args "youtube:player_client=tv_embedded,formats=missing_pot" {fmt} {out}',
-        # 4. android client
         f'yt-dlp {safe} --extractor-args "youtube:player_client=android" {fmt} {out}',
-        # 5. web_embedded
         f'yt-dlp {safe} --extractor-args "youtube:player_client=web_embedded" {fmt} {out}',
-        # 6. Absolute fallback — any format merged to mp4
         f'yt-dlp --no-playlist --no-check-certificates --socket-timeout 60 --merge-output-format mp4 -f best {out}',
     ]
 
@@ -57,7 +48,6 @@ def try_download(url, raw_path, timeout=360):
                 raw_path.unlink()
         except Exception:
             pass
-
     return False, last_err
 
 
@@ -80,33 +70,53 @@ def classify_download_error(err_text):
     return "Não foi possível baixar o vídeo. Verifique se o link é público e tente novamente."
 
 
-def ffmpeg_scale(inp, out_path, tw, th, clip_dur):
+def cut_and_scale(inp, out_path, start, dur, tw, th):
     """
-    Robust scale-and-crop to tw x th.
-    Uses aspect-ratio aware scaling + center crop + yuv420p for compatibility.
-    Returns (success, stderr).
+    Cut [start, start+dur] from inp and scale/crop to tw x th.
+    Tries progressively simpler FFmpeg commands.
+    Returns True if output file is valid.
     """
-    # Scale so the video COVERS the target (fill), then crop center
-    # The expression picks which dimension to match first:
-    #   if source is wider than target → scale by height, crop width
-    #   if source is taller than target → scale by width, crop height
-    scale_expr = (
-        f"scale='if(gt(iw/ih,{tw}/{th}),"
-        f"trunc(oh*a/2)*2,{tw})':"
-        f"'if(gt(iw/ih,{tw}/{th}),"
-        f"{th},trunc(ow/a/2)*2)',"
-        f"crop={tw}:{th}"
+    def valid(p):
+        return Path(p).exists() and Path(p).stat().st_size > 1000
+
+    # Attempt 1: scale to fill + center crop (force_divisible_by=2 avoids odd-dimension libx264 error)
+    r = run(
+        f'ffmpeg -y -ss {start:.2f} -i "{inp}" -t {dur:.2f} '
+        f'-vf "scale={tw}:{th}:force_original_aspect_ratio=increase:force_divisible_by=2,'
+        f'crop={tw}:{th},setsar=1" '
+        f'-c:v libx264 -c:a aac -preset fast -pix_fmt yuv420p "{out_path}"',
+        timeout=180,
     )
-    cmd = (
-        f'ffmpeg -y -i "{inp}" '
-        f'-vf "{scale_expr}" '
-        f'-c:v libx264 -c:a aac -preset fast -pix_fmt yuv420p '
-        f'-t {clip_dur:.2f} '
-        f'"{out_path}"'
+    if valid(out_path):
+        return True
+
+    # Attempt 2: pad instead of crop (no loss, black bars)
+    try:
+        Path(out_path).unlink(missing_ok=True)
+    except Exception:
+        pass
+    r = run(
+        f'ffmpeg -y -ss {start:.2f} -i "{inp}" -t {dur:.2f} '
+        f'-vf "scale={tw}:{th}:force_original_aspect_ratio=decrease:force_divisible_by=2,'
+        f'pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2:black,setsar=1" '
+        f'-c:v libx264 -c:a aac -preset fast -pix_fmt yuv420p "{out_path}"',
+        timeout=180,
     )
-    r = run(cmd, timeout=180)
-    ok = r.returncode == 0 and Path(out_path).exists() and Path(out_path).stat().st_size > 1000
-    return ok, r.stderr
+    if valid(out_path):
+        return True
+
+    # Attempt 3: brutal stretch (ignores aspect ratio but always works)
+    try:
+        Path(out_path).unlink(missing_ok=True)
+    except Exception:
+        pass
+    r = run(
+        f'ffmpeg -y -ss {start:.2f} -i "{inp}" -t {dur:.2f} '
+        f'-vf "scale={tw}:{th},setsar=1" '
+        f'-c:v libx264 -c:a aac -preset fast -pix_fmt yuv420p "{out_path}"',
+        timeout=180,
+    )
+    return valid(out_path)
 
 
 def process_video(job_id, url, fmt, duration, clips, player):
@@ -159,20 +169,22 @@ def process_video(job_id, url, fmt, duration, clips, player):
             fail(classify_download_error(err_text))
             return
 
-        # STEP 1b: Re-encode to clean H264/AAC mp4 for guaranteed FFmpeg compatibility
+        # STEP 1b: Re-encode to guaranteed H264/AAC for FFmpeg compatibility
         upd(12, "Padronizando formato do vídeo...")
         clean_path = out_dir / "clean.mp4"
         r = run(
-            f'ffmpeg -y -i "{raw_path}" -c:v libx264 -c:a aac -preset ultrafast '
-            f'-pix_fmt yuv420p -movflags +faststart "{clean_path}"',
+            f'ffmpeg -y -i "{raw_path}" '
+            f'-c:v libx264 -c:a aac -preset ultrafast -pix_fmt yuv420p '
+            f'-movflags +faststart "{clean_path}"',
             timeout=300,
         )
         if r.returncode == 0 and clean_path.exists() and clean_path.stat().st_size > 10000:
-            raw_path = clean_path   # use re-encoded version from here on
-        # If re-encode fails, continue with original (FFmpeg will try anyway)
+            source = clean_path
+        else:
+            source = raw_path  # fallback to original if re-encode failed
 
-        # PROBE VIDEO DURATION
-        probe = run(f'ffprobe -v quiet -print_format json -show_format "{raw_path}"', timeout=30)
+        # PROBE DURATION
+        probe = run(f'ffprobe -v quiet -print_format json -show_format "{source}"', timeout=30)
         try:
             vid_dur = float(json.loads(probe.stdout)["format"]["duration"])
         except Exception:
@@ -183,22 +195,21 @@ def process_video(job_id, url, fmt, duration, clips, player):
             fail("Vídeo muito curto (menos de 5 segundos).")
             return
 
-        upd(20, "Analisando áudio para detectar momentos de destaque...")
+        upd(20, "Analisando áudio...")
 
         # STEP 2: EXTRACT AUDIO
         pcm_path = out_dir / "audio.raw"
         sample_rate = 8000
         run(
-            f'ffmpeg -y -i "{raw_path}" -vn -acodec pcm_s16le '
+            f'ffmpeg -y -i "{source}" -vn -acodec pcm_s16le '
             f'-ar {sample_rate} -ac 1 -f s16le "{pcm_path}"',
             timeout=120,
         )
 
         # STEP 3: RMS ENERGY
-        upd(35, "Calculando energia do áudio por segmento...")
+        upd(35, "Calculando energia do áudio...")
         energy = []
         chunk_size = int(sample_rate * 0.1) * 2
-
         if pcm_path.exists() and pcm_path.stat().st_size > 0:
             with open(pcm_path, "rb") as f:
                 raw_audio = f.read()
@@ -217,9 +228,9 @@ def process_video(job_id, url, fmt, duration, clips, player):
         min_gap = max(clip_dur + 2.0, (vid_dur - clip_dur) / max(clips + 1, 2))
 
         peaks = []
-        smoothed = []
         if len(energy) > 10:
             window = int(2.0 / chunk_secs)
+            smoothed = []
             for i in range(len(energy)):
                 lo = max(0, i - window // 2)
                 hi = min(len(energy), i + window // 2)
@@ -263,7 +274,7 @@ def process_video(job_id, url, fmt, duration, clips, player):
 
         upd(60, "Cortando e convertendo clipes...")
 
-        # STEP 5 + 6 COMBINED: Cut → Scale → Crop in single FFmpeg pass
+        # STEP 5+6: CUT + SCALE/CROP per peak
         fs = FORMAT_SETTINGS.get(fmt, FORMAT_SETTINGS["tiktok"])
         tw, th = fs["w"], fs["h"]
         scaled_paths = []
@@ -272,39 +283,9 @@ def process_video(job_id, url, fmt, duration, clips, player):
             start = max(0, t - clip_dur / 2)
             if start + clip_dur > vid_dur:
                 start = max(0, vid_dur - clip_dur)
-
             sc_path = out_dir / f"scaled_{idx:02d}.mp4"
-            ok, stderr = ffmpeg_scale(
-                inp=str(raw_path),
-                out_path=str(sc_path),
-                tw=tw, th=th,
-                clip_dur=clip_dur,
-            )
-            # Inject start offset into the full pipeline
-            # Re-do with -ss for seek
-            if not ok:
-                cmd2 = (
-                    f'ffmpeg -y -ss {start:.2f} -i "{raw_path}" '
-                    f'-t {clip_dur:.2f} '
-                    f'-vf "scale=\'if(gt(iw/ih,{tw}/{th}),trunc(oh*a/2)*2,{tw})\':'
-                    f'\'if(gt(iw/ih,{tw}/{th}),{th},trunc(ow/a/2)*2)\',crop={tw}:{th}" '
-                    f'-c:v libx264 -c:a aac -preset fast -pix_fmt yuv420p "{sc_path}"'
-                )
-                r2 = run(cmd2, timeout=180)
-                ok = r2.returncode == 0 and sc_path.exists() and sc_path.stat().st_size > 1000
-
-            if not ok:
-                # Final fallback: simple scale without aspect ratio math
-                r3 = run(
-                    f'ffmpeg -y -ss {start:.2f} -i "{raw_path}" -t {clip_dur:.2f} '
-                    f'-vf "scale={tw}:{th},setsar=1" '
-                    f'-c:v libx264 -c:a aac -preset fast -pix_fmt yuv420p "{sc_path}"',
-                    timeout=180,
-                )
-                ok = r3.returncode == 0 and sc_path.exists() and sc_path.stat().st_size > 1000
-
-            if ok:
-                scaled_paths.append((start, sc_path))
+            if cut_and_scale(str(source), str(sc_path), start, clip_dur, tw, th):
+                scaled_paths.append(sc_path)
 
         if not scaled_paths:
             fail("Não foi possível converter os clipes. Tente um vídeo diferente.")
@@ -315,19 +296,18 @@ def process_video(job_id, url, fmt, duration, clips, player):
         # STEP 7: CONCATENATE
         concat_list = out_dir / "concat.txt"
         with open(concat_list, "w") as f:
-            for _, sp in scaled_paths:
+            for sp in scaled_paths:
                 f.write(f"file '{sp.resolve()}'\n")
 
         output_name = f"corteai_{job_id[:8]}.mp4"
         output_path = out_dir / output_name
-        r = run(
+        run(
             f'ffmpeg -y -f concat -safe 0 -i "{concat_list}" -c copy "{output_path}"',
             timeout=180,
         )
 
         if not output_path.exists() or output_path.stat().st_size < 1000:
-            _, first = scaled_paths[0]
-            shutil.copy(first, output_path)
+            shutil.copy(scaled_paths[0], output_path)
 
         if not output_path.exists() or output_path.stat().st_size < 1000:
             fail("Erro ao finalizar o vídeo. Tente novamente.")
